@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "extscorer"
+version = "0.1.0"
+description = "Generic framework for scoring residential properties as exterior-renovation (siding/roofing) lead candidates from property/roof-age, tree-canopy, and storm-history signals."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "SurvivesProduction" }]
+dependencies = [
+    "pydantic>=2.6,<3",
+    "psycopg[binary]>=3.1,<4",
+    "python-dotenv>=1.0,<2",
+    "truststore>=0.9,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/extscorer"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/extscorer",
+    "README.md",
+    "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
