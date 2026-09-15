@@ -46,6 +46,7 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "exterior_wall_1": record.exterior_wall_1,
         "exterior_wall_2": record.exterior_wall_2,
         "building_percent_good": record.building_percent_good,
+        "siding_data_source": record.siding_data_source,
         "latitude": record.latitude,
         "longitude": record.longitude,
         "pct_tree_canopy_nearby": record.pct_tree_canopy_nearby,
@@ -53,10 +54,16 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "canopy_source": record.canopy_source,
         "nearest_storm_event_date": record.nearest_storm_event_date,
         "storm_event_summary": record.storm_event_summary,
+        "permit_data_available": record.permit_data_available,
+        "permit_history": Jsonb(record.permit_history),
+        "exterior_permit_count": record.exterior_permit_count,
+        "most_recent_exterior_permit_date": record.most_recent_exterior_permit_date,
+        "most_recent_exterior_permit_type": record.most_recent_exterior_permit_type,
         "lead_score": record.lead_score,
         "score_property_component": record.score_property_component,
         "score_canopy_component": record.score_canopy_component,
         "score_storm_component": record.score_storm_component,
+        "score_permit_component": record.score_permit_component,
         "raw_data": Jsonb(record.raw_data),
         "needs_review": record.needs_review,
         "review_reason": record.review_reason,
@@ -69,25 +76,60 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
     An exact match refreshes the row's content and bumps `last_seen_at`;
     no match inserts a new row (`first_seen_at` set by the column
     default).
+
+    **Enrichment-only fields are preserved on a bare re-scrape, not blindly
+    clobbered** -- fixed 2026-09-15, a real bug found live: a `LeadDataSource`
+    like `VgsiParcelSource` never populates `latitude`/`longitude`/canopy/
+    storm/score fields at all (those come only from this repo's own
+    backfill scripts), so its `ParcelLeadRecord` always carries `None` for
+    them. Before this fix, re-running `run_client.py` against an
+    already-enriched town (e.g. a scheduled re-scrape) silently WIPED every
+    parcel's geocoding/canopy/storm/score data back to `None` on every
+    single run, discovered when this session's own re-scrape reset all
+    1,600 real parcels' enrichment fields at once. Now these columns use
+    `coalesce(excluded.X, parcels.X)`: a source that provides a real value
+    (a future canopy-aware source, or literally the enrichment backfill
+    scripts themselves, which write via `update_parcel_*` not this
+    function) overwrites; a source that provides `None` (every current
+    `LeadDataSource`) leaves the existing value alone.
+
+    `permit_data_available`/`permit_history` need a DIFFERENT rule than
+    plain coalesce: both default to non-`None` values (`False`/`[]`) on a
+    record that never touched them, so a plain coalesce wouldn't help --
+    `False`/`[]` aren't `NULL`. Instead: only trust the incoming record's
+    permit fields when `excluded.permit_data_available` is true (a real
+    `propertyrecordcards.com`-sourced scrape always sets this true and
+    provides real data); a VGSI-sourced re-scrape's `False`/`[]` defaults
+    never overwrite an existing `Woodstock`-style enrichment pass's real
+    `True`/populated data. `exterior_permit_count`/`most_recent_exterior_
+    permit_date`/`most_recent_exterior_permit_type` all default to `None`
+    on an unenriched record, so plain coalesce already does the right
+    thing for those.
     """
     query = """
         insert into parcels (
             client_id, town, parcel_id, county, address, source_url,
             year_built, living_area_sqft, roof_cover_material,
-            exterior_wall_1, exterior_wall_2, building_percent_good,
+            exterior_wall_1, exterior_wall_2, building_percent_good, siding_data_source,
             latitude, longitude,
             pct_tree_canopy_nearby, canopy_data_year, canopy_source,
             nearest_storm_event_date, storm_event_summary,
+            permit_data_available, permit_history, exterior_permit_count,
+            most_recent_exterior_permit_date, most_recent_exterior_permit_type,
             lead_score, score_property_component, score_canopy_component, score_storm_component,
+            score_permit_component,
             raw_data, needs_review, review_reason
         ) values (
             %(client_id)s, %(town)s, %(parcel_id)s, %(county)s, %(address)s, %(source_url)s,
             %(year_built)s, %(living_area_sqft)s, %(roof_cover_material)s,
-            %(exterior_wall_1)s, %(exterior_wall_2)s, %(building_percent_good)s,
+            %(exterior_wall_1)s, %(exterior_wall_2)s, %(building_percent_good)s, %(siding_data_source)s,
             %(latitude)s, %(longitude)s,
             %(pct_tree_canopy_nearby)s, %(canopy_data_year)s, %(canopy_source)s,
             %(nearest_storm_event_date)s, %(storm_event_summary)s,
+            %(permit_data_available)s, %(permit_history)s, %(exterior_permit_count)s,
+            %(most_recent_exterior_permit_date)s, %(most_recent_exterior_permit_type)s,
             %(lead_score)s, %(score_property_component)s, %(score_canopy_component)s, %(score_storm_component)s,
+            %(score_permit_component)s,
             %(raw_data)s, %(needs_review)s, %(review_reason)s
         )
         on conflict (client_id, town, parcel_id) do update set
@@ -100,17 +142,29 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             exterior_wall_1 = excluded.exterior_wall_1,
             exterior_wall_2 = excluded.exterior_wall_2,
             building_percent_good = excluded.building_percent_good,
-            latitude = excluded.latitude,
-            longitude = excluded.longitude,
-            pct_tree_canopy_nearby = excluded.pct_tree_canopy_nearby,
-            canopy_data_year = excluded.canopy_data_year,
-            canopy_source = excluded.canopy_source,
-            nearest_storm_event_date = excluded.nearest_storm_event_date,
-            storm_event_summary = excluded.storm_event_summary,
-            lead_score = excluded.lead_score,
-            score_property_component = excluded.score_property_component,
-            score_canopy_component = excluded.score_canopy_component,
-            score_storm_component = excluded.score_storm_component,
+            siding_data_source = coalesce(excluded.siding_data_source, parcels.siding_data_source),
+            latitude = coalesce(excluded.latitude, parcels.latitude),
+            longitude = coalesce(excluded.longitude, parcels.longitude),
+            pct_tree_canopy_nearby = coalesce(excluded.pct_tree_canopy_nearby, parcels.pct_tree_canopy_nearby),
+            canopy_data_year = coalesce(excluded.canopy_data_year, parcels.canopy_data_year),
+            canopy_source = coalesce(excluded.canopy_source, parcels.canopy_source),
+            nearest_storm_event_date = coalesce(excluded.nearest_storm_event_date, parcels.nearest_storm_event_date),
+            storm_event_summary = coalesce(excluded.storm_event_summary, parcels.storm_event_summary),
+            -- permit_data_available/permit_history default to False/[] (not
+            -- NULL) on a record that never touched them, so plain coalesce
+            -- wouldn't help -- only trust the incoming record's permit
+            -- fields when it actually claims real permit visibility. See
+            -- this function's own docstring.
+            permit_data_available = (excluded.permit_data_available or parcels.permit_data_available),
+            permit_history = case when excluded.permit_data_available then excluded.permit_history else parcels.permit_history end,
+            exterior_permit_count = coalesce(excluded.exterior_permit_count, parcels.exterior_permit_count),
+            most_recent_exterior_permit_date = coalesce(excluded.most_recent_exterior_permit_date, parcels.most_recent_exterior_permit_date),
+            most_recent_exterior_permit_type = coalesce(excluded.most_recent_exterior_permit_type, parcels.most_recent_exterior_permit_type),
+            lead_score = coalesce(excluded.lead_score, parcels.lead_score),
+            score_property_component = coalesce(excluded.score_property_component, parcels.score_property_component),
+            score_canopy_component = coalesce(excluded.score_canopy_component, parcels.score_canopy_component),
+            score_storm_component = coalesce(excluded.score_storm_component, parcels.score_storm_component),
+            score_permit_component = coalesce(excluded.score_permit_component, parcels.score_permit_component),
             raw_data = excluded.raw_data,
             needs_review = excluded.needs_review,
             review_reason = excluded.review_reason,
@@ -167,12 +221,15 @@ def update_parcel_lead_score(
     score_property_component: float | None,
     score_canopy_component: float | None,
     score_storm_component: float | None,
+    score_permit_component: float | None = None,
 ) -> dict[str, Any]:
     """Backfill one parcel row's `lead_score`/per-component fields by its
     own primary key (`id`) -- every other column is left untouched.
-    `None`s (a disqualified, non-scoreable parcel -- see `extscorer.
-    scoring.basic.score_property`'s qualifying gate) are written just as
-    readily as real values, same idempotent-refresh convention as
+    `None`s (a disqualified, non-scoreable parcel, or a component that
+    wasn't evaluated -- see `extscorer.scoring.basic.score_property`'s
+    qualifying gate and its per-component "None means not evaluated"
+    convention) are written just as readily as real values, same
+    idempotent-refresh convention as
     `update_parcel_storm_fields`/`update_parcel_canopy_fields`.
     """
     with conn.cursor(row_factory=dict_row) as cur:
@@ -183,6 +240,7 @@ def update_parcel_lead_score(
                 score_property_component = %(property_component)s,
                 score_canopy_component = %(canopy_component)s,
                 score_storm_component = %(storm_component)s,
+                score_permit_component = %(permit_component)s,
                 updated_at = now()
             where id = %(id)s
             returning *
@@ -193,6 +251,66 @@ def update_parcel_lead_score(
                 "property_component": score_property_component,
                 "canopy_component": score_canopy_component,
                 "storm_component": score_storm_component,
+                "permit_component": score_permit_component,
+            },
+        )
+        row = cur.fetchone()
+    conn.commit()
+    assert row is not None
+    return row
+
+
+def update_parcel_permit_and_siding_fields(
+    conn: psycopg.Connection,
+    parcel_id: Any,
+    exterior_wall_1: str | None,
+    siding_data_source: str | None,
+    permit_data_available: bool,
+    permit_history: list[dict[str, Any]],
+    exterior_permit_count: int | None,
+    most_recent_exterior_permit_date: date | None,
+    most_recent_exterior_permit_type: str | None,
+) -> dict[str, Any]:
+    """Backfill one parcel row's real-siding/permit-history fields by its
+    own primary key (`id`) -- every other column is left untouched.
+
+    Built for `property-lead-scorer-full/scripts/backfill_woodstock_prc_enrichment.py`:
+    Woodstock's 200 parcels were already scraped from VGSI (see
+    `sources/woodstock_vgsi.py`) and don't need re-scraping from scratch --
+    this is a cross-source ENRICHMENT pass, matching each existing row by
+    address to its propertyrecordcards.com counterpart and overwriting only
+    the fields that source can improve on. `exterior_wall_1` IS
+    overwritten here (with the real "Siding:" field value, provenance
+    recorded in `siding_data_source`) -- deliberately more trustworthy than
+    VGSI's own same-named field, not merely a fallback. Same idempotent-
+    refresh convention as `update_parcel_storm_fields`/
+    `update_parcel_canopy_fields`: always writes the current computed
+    value, safe to rerun.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            update parcels
+            set exterior_wall_1 = %(exterior_wall_1)s,
+                siding_data_source = %(siding_data_source)s,
+                permit_data_available = %(permit_data_available)s,
+                permit_history = %(permit_history)s,
+                exterior_permit_count = %(exterior_permit_count)s,
+                most_recent_exterior_permit_date = %(most_recent_exterior_permit_date)s,
+                most_recent_exterior_permit_type = %(most_recent_exterior_permit_type)s,
+                updated_at = now()
+            where id = %(id)s
+            returning *
+            """,
+            {
+                "id": parcel_id,
+                "exterior_wall_1": exterior_wall_1,
+                "siding_data_source": siding_data_source,
+                "permit_data_available": permit_data_available,
+                "permit_history": Jsonb(permit_history),
+                "exterior_permit_count": exterior_permit_count,
+                "most_recent_exterior_permit_date": most_recent_exterior_permit_date,
+                "most_recent_exterior_permit_type": most_recent_exterior_permit_type,
             },
         )
         row = cur.fetchone()

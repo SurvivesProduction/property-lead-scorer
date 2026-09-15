@@ -63,6 +63,20 @@ class ParcelLeadRecord(BaseModel):
     towns' card templates -- confirmed missing outright on every sampled
     Pomfret card -- so `None` here can mean either "no building" or "this
     town's template doesn't carry the field," not a parse failure.
+
+    `permit_data_available`/`permit_history`/`exterior_permit_count`/
+    `most_recent_exterior_permit_date`/`most_recent_exterior_permit_type`/
+    `siding_data_source` added 2026-09-15 for the two eQuality Valuation
+    Services towns (Killingly, Ashford, `propertyrecordcards.com`) plus
+    Woodstock's enrichment backfill from that same source. Unlike
+    `exterior_wall_1`'s VGSI proxy, this source exposes REAL per-parcel
+    permit history and a direct "Siding:" field -- see
+    `extscorer_full.sources.propertyrecordcards` and migration
+    `005_add_permit_signal_and_siding_source.sql` for the full reasoning.
+    `exterior_wall_1`/`exterior_wall_2` are reused (not duplicated) for a
+    propertyrecordcards.com-sourced parcel's Siding value, since it's the
+    same underlying concept (current exterior material) as VGSI's field;
+    `siding_data_source` records which real source populated it.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -79,6 +93,7 @@ class ParcelLeadRecord(BaseModel):
     exterior_wall_1: str | None = None
     exterior_wall_2: str | None = None
     building_percent_good: int | None = None
+    siding_data_source: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     pct_tree_canopy_nearby: float | None = None
@@ -86,10 +101,16 @@ class ParcelLeadRecord(BaseModel):
     canopy_source: str | None = None
     nearest_storm_event_date: date | None = None
     storm_event_summary: str | None = None
+    permit_data_available: bool = False
+    permit_history: list[dict[str, Any]] = Field(default_factory=list)
+    exterior_permit_count: int | None = None
+    most_recent_exterior_permit_date: date | None = None
+    most_recent_exterior_permit_type: str | None = None
     lead_score: float | None = None
     score_property_component: float | None = None
     score_canopy_component: float | None = None
     score_storm_component: float | None = None
+    score_permit_component: float | None = None
     raw_data: dict[str, Any] = Field(default_factory=dict)
     needs_review: bool = False
     review_reason: str | None = None

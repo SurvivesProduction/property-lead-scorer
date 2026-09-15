@@ -115,6 +115,60 @@ Darren hasn't reviewed this signal or its bucket boundaries yet. When
 disabled, `score_property`/`rank_candidates` behave EXACTLY as before
 this signal existed (see the weighting note in `score_property`'s
 docstring).
+
+**Steps aside for permit-tracked parcels (2026-09-15):** even when
+enabled, `siding_age_score` returns `None` for any parcel with
+`permit_data_available` true -- see the "Permit-history signal" section
+below. Real permit history answers the same underlying question this
+proxy exists to guess at, more reliably, so the two are mutually exclusive
+per parcel rather than both contributing.
+
+## Permit-history signal (new, 2026-09-15, enabled by default)
+
+`permit_history_score()` below is a fifth signal, added once Killingly and
+Ashford (`propertyrecordcards.com`, an eQuality Valuation Services
+platform -- see `extscorer_full.sources.propertyrecordcards`) turned up
+REAL per-parcel permit history: permit number, type, date opened, reason.
+This is fundamentally different from every proxy signal above -- it's not
+an inference from `year_built` + a material guess, it's a direct
+historical record of whether exterior work (siding/roofing/window/gutter,
+matched by keyword against permit type + reason text) was actually done,
+and when.
+
+**Enabled by default** (`DEFAULT_ENABLE_PERMIT_SIGNAL = True`), unlike the
+siding-age proxy -- this is real ground-truth data, not an unreviewed
+domain-judgment placeholder, so it doesn't need to wait on Darren's
+sign-off the way the proxy did. It naturally self-limits anyway: the
+component is `None` (excluded from the weighted average, same convention
+as the disabled siding-age signal) for any parcel whose source doesn't
+expose permit history at all (`permit_data_available` false -- true for
+every VGSI-sourced town; only Killingly/Ashford/Woodstock have real
+values as of this writing).
+
+**Weight** (`DEFAULT_PERMIT_WEIGHT = 0.20`): chosen deliberately higher
+than the still-unreviewed siding-age proxy's 0.15 (this is real evidence,
+not a guess) but below canopy's real-data-calibrated 0.28 (only 3 of 8
+towns have any permit visibility yet, and the exterior-permit-keyword
+classifier itself hasn't been checked against a large real sample the way
+canopy/property/storm's distributions were -- see this module's own
+"Real-data recalibration" section for what that kind of check looks like;
+permit hasn't had one yet). Not yet real-data-calibrated in that sense --
+same "placeholder in real code, not final" status the other signals
+started at, but grounded in actual historical fact rather than a physical-
+plausibility guess, which is why it sits above siding-age in trust despite
+also being new.
+
+**Direction and lookback** (`DEFAULT_PERMIT_LOOKBACK_YEARS = 20`): a
+recent exterior-relevant permit means the work was already done recently
+-- LOW lead value (score near 0.0, decaying back toward 1.0 as the permit
+ages past the lookback window, using the same simple linear-decay shape
+`storm_score` already uses for recency, not a curve requiring its own
+real-data justification). No exterior permit on file (whether zero permits
+of any kind, or only non-exterior ones like the confirmed real Killingly
+sample's 2013 HVAC / 2014 Electrical permits) scores a full 1.0 -- real
+confirmation that no known re-siding/re-roofing has happened, a stronger
+version of the same "still likely original" reasoning the siding-age
+proxy has to infer from age alone.
 """
 from __future__ import annotations
 
@@ -192,6 +246,12 @@ DEFAULT_SIDING_DURABLE_BASELINE_SCORE = 0.85
 # exactly 0 (neutral midpoint), scaling linearly to +/-half this value at
 # the 0/100 extremes.
 DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH = 0.15
+
+# Permit-history signal -- see module docstring's "Permit-history signal"
+# section. Real ground-truth data (not a proxy), enabled by default.
+DEFAULT_ENABLE_PERMIT_SIGNAL = True
+DEFAULT_PERMIT_WEIGHT = 0.20
+DEFAULT_PERMIT_LOOKBACK_YEARS = 20
 
 
 def _current_year(as_of_year: int | None) -> int:
@@ -407,7 +467,7 @@ def siding_age_score(
     durable_decay_years: float = DEFAULT_SIDING_DURABLE_DECAY_YEARS,
     durable_baseline_score: float = DEFAULT_SIDING_DURABLE_BASELINE_SCORE,
     percent_good_modifier_strength: float = DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH,
-) -> float:
+) -> float | None:
     """Score 0-1: how likely this property's exterior siding is original
     and overdue for replacement, from `exterior_wall_1` + `year_built`
     (`building_percent_good` as a soft modifier). See module docstring's
@@ -428,7 +488,20 @@ def siding_age_score(
     material family (brick, stone, composite, etc. -- no established
     heuristic for these yet) -- same "unknown is neutral, not confirmed-
     safe" convention as `canopy_score`'s missing-data handling.
+
+    Returns `None` (signal not evaluated -- same convention as a disabled
+    signal, see `score_property`'s weighting note) when
+    `permit_data_available` is true. Added 2026-09-15: a parcel with real
+    permit history has a strictly better, non-proxy signal available for
+    the exact same underlying question ("has this been re-sided/re-roofed
+    recently?") via `permit_history_score` -- inferring from material +
+    year_built is redundant, lower-confidence noise once real history is
+    on file, so this proxy deliberately steps aside rather than being
+    additionally scored/weighted for those parcels.
     """
+    if parcel.get("permit_data_available"):
+        return None
+
     exterior_wall_1 = parcel.get("exterior_wall_1")
     year_built = parcel.get("year_built")
     if not exterior_wall_1 or year_built is None:
@@ -466,6 +539,47 @@ def siding_age_score(
     return max(0.0, min(1.0, base))
 
 
+def permit_history_score(
+    parcel: dict[str, Any],
+    lookback_years: int = DEFAULT_PERMIT_LOOKBACK_YEARS,
+    as_of_year: int | None = None,
+) -> float | None:
+    """Score 0-1: real exterior-permit-history-based need, or None if this
+    parcel's source has no permit visibility at all.
+
+    See module docstring's "Permit-history signal" section for the full
+    reasoning. Reads `permit_data_available` (a source-level fact, true
+    only for propertyrecordcards.com-sourced parcels as of this writing)
+    and the denormalized `most_recent_exterior_permit_date` cached on the
+    parcel row (computed at scrape/enrichment time from the parcel's full
+    `permit_history` -- see `extscorer_full.sources.propertyrecordcards`),
+    the same "cache a computed summary on the row" pattern `storm_score`
+    already uses for `nearest_storm_event_date`.
+
+    Returns `None` (signal not evaluated, excluded from the weighted
+    average -- same convention as `siding_age_score` when disabled) when
+    `permit_data_available` is false. Returns 1.0 when permit data IS
+    available but no exterior-relevant permit was ever found (real
+    confirmation of "still likely original," not an absence of
+    information). Otherwise decays linearly from 0.0 (an exterior permit
+    opened this year -- just addressed, lowest lead value) to 1.0 at
+    `lookback_years` years ago and beyond -- same simple recency shape
+    `storm_score` uses, chosen for the same reason: no real-data
+    distribution exists yet to justify a more complex curve.
+    """
+    if not parcel.get("permit_data_available"):
+        return None
+
+    most_recent = parcel.get("most_recent_exterior_permit_date")
+    if most_recent is None:
+        return 1.0
+
+    years_since = _current_year(as_of_year) - most_recent.year
+    if years_since < 0 or years_since >= lookback_years:
+        return 1.0
+    return years_since / lookback_years
+
+
 @dataclass(frozen=True)
 class LeadScore:
     """A scored, ranked exterior-renovation-lead candidate."""
@@ -488,6 +602,10 @@ class LeadScore:
     # module, but future callers shouldn't be forced to know about this)
     # keeps working unchanged.
     siding_age_component: float | None = None
+    # None when this parcel's source has no permit visibility at all (see
+    # `permit_history_score`'s docstring) -- distinct from a computed 1.0
+    # ("checked, nothing found"), same reasoning as `siding_age_component`.
+    permit_component: float | None = None
 
 
 def score_property(
@@ -503,6 +621,9 @@ def score_property(
     storm_weight: float = DEFAULT_STORM_WEIGHT,
     enable_siding_age_signal: bool = DEFAULT_ENABLE_SIDING_AGE_SIGNAL,
     siding_age_weight: float = DEFAULT_SIDING_AGE_WEIGHT,
+    enable_permit_signal: bool = DEFAULT_ENABLE_PERMIT_SIGNAL,
+    permit_weight: float = DEFAULT_PERMIT_WEIGHT,
+    permit_lookback_years: int = DEFAULT_PERMIT_LOOKBACK_YEARS,
     as_of_year: int | None = None,
 ) -> LeadScore | None:
     """Score one parcel as an exterior-renovation-lead candidate, or None if it doesn't qualify.
@@ -552,8 +673,16 @@ def score_property(
     siding_age_component: float | None = None
     if enable_siding_age_signal:
         siding_age_component = siding_age_score(parcel)
-        weighted_sum += siding_age_weight * siding_age_component
-        total_weight += siding_age_weight
+        if siding_age_component is not None:
+            weighted_sum += siding_age_weight * siding_age_component
+            total_weight += siding_age_weight
+
+    permit_component: float | None = None
+    if enable_permit_signal:
+        permit_component = permit_history_score(parcel, permit_lookback_years, as_of_year)
+        if permit_component is not None:
+            weighted_sum += permit_weight * permit_component
+            total_weight += permit_weight
 
     score = weighted_sum / total_weight if total_weight > 0 else 0.0
 
@@ -572,10 +701,19 @@ def score_property(
             else "No storm-event history on file yet."
         ),
     ]
-    if enable_siding_age_signal:
+    if enable_siding_age_signal and siding_age_component is not None:
         exterior_wall_1 = parcel.get("exterior_wall_1")
         reasons.append(
             f"Exterior wall: {exterior_wall_1}." if exterior_wall_1 else "No exterior-wall-material data on file yet."
+        )
+    if enable_permit_signal and permit_component is not None:
+        most_recent = parcel.get("most_recent_exterior_permit_date")
+        exterior_permit_count = parcel.get("exterior_permit_count") or 0
+        reasons.append(
+            f"Most recent exterior-relevant permit ({parcel.get('most_recent_exterior_permit_type', 'unknown type')}) "
+            f"opened {most_recent}."
+            if most_recent is not None
+            else f"No exterior-relevant permit on file ({exterior_permit_count} permits checked)."
         )
 
     return LeadScore(
@@ -590,6 +728,7 @@ def score_property(
         living_area_sqft=living_area_sqft,
         reasons=tuple(reasons),
         siding_age_component=siding_age_component,
+        permit_component=permit_component,
     )
 
 
@@ -606,6 +745,9 @@ def rank_candidates(
     storm_weight: float = DEFAULT_STORM_WEIGHT,
     enable_siding_age_signal: bool = DEFAULT_ENABLE_SIDING_AGE_SIGNAL,
     siding_age_weight: float = DEFAULT_SIDING_AGE_WEIGHT,
+    enable_permit_signal: bool = DEFAULT_ENABLE_PERMIT_SIGNAL,
+    permit_weight: float = DEFAULT_PERMIT_WEIGHT,
+    permit_lookback_years: int = DEFAULT_PERMIT_LOOKBACK_YEARS,
     as_of_year: int | None = None,
 ) -> list[LeadScore]:
     """Score and rank every qualifying parcel, highest score first.
@@ -637,6 +779,9 @@ def rank_candidates(
             storm_weight=storm_weight,
             enable_siding_age_signal=enable_siding_age_signal,
             siding_age_weight=siding_age_weight,
+            enable_permit_signal=enable_permit_signal,
+            permit_weight=permit_weight,
+            permit_lookback_years=permit_lookback_years,
             as_of_year=as_of_year,
         )
         if lead is not None:

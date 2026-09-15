@@ -4,9 +4,11 @@ import pytest
 
 from extscorer.scoring.basic import (
     DEFAULT_CANOPY_WEIGHT,
+    DEFAULT_PERMIT_LOOKBACK_YEARS,
     DEFAULT_PROPERTY_WEIGHT,
     DEFAULT_STORM_WEIGHT,
     canopy_score,
+    permit_history_score,
     property_age_score,
     rank_candidates,
     score_property,
@@ -501,3 +503,95 @@ def test_rank_candidates_siding_signal_disabled_by_default_matches_prior_ranking
     ranked_explicit_off = rank_candidates(parcels, enable_siding_age_signal=False, as_of_year=_AS_OF_YEAR)
     assert [lead.score for lead in ranked_default] == [lead.score for lead in ranked_explicit_off]
     assert all(lead.siding_age_component is None for lead in ranked_default)
+
+
+def test_siding_age_score_steps_aside_when_permit_data_available() -> None:
+    assert siding_age_score({"exterior_wall_1": "Vinyl Siding", "year_built": 1920, "permit_data_available": True}) is None
+
+
+def test_permit_history_score_none_when_source_has_no_permit_visibility() -> None:
+    assert permit_history_score({"permit_data_available": False}) is None
+    assert permit_history_score({}) is None
+
+
+def test_permit_history_score_full_when_available_but_no_exterior_permit_found() -> None:
+    assert permit_history_score({"permit_data_available": True, "exterior_permit_count": 0}) == 1.0
+
+
+def test_permit_history_score_zero_right_after_a_recent_exterior_permit() -> None:
+    score = permit_history_score(
+        {"permit_data_available": True, "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 3, 1)},
+        as_of_year=_AS_OF_YEAR,
+    )
+    assert score == 0.0
+
+
+def test_permit_history_score_decays_linearly_back_to_one() -> None:
+    halfway_years = DEFAULT_PERMIT_LOOKBACK_YEARS // 2
+    score = permit_history_score(
+        {
+            "permit_data_available": True,
+            "most_recent_exterior_permit_date": date(_AS_OF_YEAR - halfway_years, 6, 1),
+        },
+        as_of_year=_AS_OF_YEAR,
+    )
+    assert score == pytest.approx(halfway_years / DEFAULT_PERMIT_LOOKBACK_YEARS)
+
+
+def test_permit_history_score_saturates_at_one_past_the_lookback_window() -> None:
+    score = permit_history_score(
+        {
+            "permit_data_available": True,
+            "most_recent_exterior_permit_date": date(_AS_OF_YEAR - DEFAULT_PERMIT_LOOKBACK_YEARS - 5, 6, 1),
+        },
+        as_of_year=_AS_OF_YEAR,
+    )
+    assert score == 1.0
+
+
+def test_score_property_permit_signal_is_none_when_source_lacks_permit_data() -> None:
+    parcel = {"parcel_id": "1", "town": "Killingly", "address": "1 Main St", "year_built": 1950}
+    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
+    assert lead is not None
+    assert lead.permit_component is None
+
+
+def test_score_property_recent_exterior_permit_lowers_score_vs_no_permit_data() -> None:
+    base_parcel = {
+        "parcel_id": "1",
+        "town": "Killingly",
+        "address": "1 Main St",
+        "year_built": 1950,
+        "living_area_sqft": 1800,
+        "pct_tree_canopy_nearby": 35.0,
+    }
+    no_permit_visibility = score_property(base_parcel, as_of_year=_AS_OF_YEAR)
+    recently_addressed = score_property(
+        {**base_parcel, "permit_data_available": True, "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 1, 1)},
+        as_of_year=_AS_OF_YEAR,
+    )
+    never_addressed = score_property(
+        {**base_parcel, "permit_data_available": True, "exterior_permit_count": 0},
+        as_of_year=_AS_OF_YEAR,
+    )
+    assert no_permit_visibility is not None and recently_addressed is not None and never_addressed is not None
+    assert recently_addressed.permit_component == 0.0
+    assert never_addressed.permit_component == 1.0
+    assert recently_addressed.score < no_permit_visibility.score < never_addressed.score
+
+
+def test_rank_candidates_permit_signal_disabled_matches_signal_free_ranking() -> None:
+    parcels = [
+        {
+            "parcel_id": "A",
+            "town": "Killingly",
+            "address": "a",
+            "year_built": 1950,
+            "permit_data_available": True,
+            "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 1, 1),  # would score very differently with signal ON
+        },
+        {"parcel_id": "B", "town": "Killingly", "address": "b", "year_built": 1950},
+    ]
+    ranked_signal_off = rank_candidates(parcels, enable_permit_signal=False, as_of_year=_AS_OF_YEAR)
+    assert ranked_signal_off[0].score == ranked_signal_off[1].score
+    assert all(lead.permit_component is None for lead in ranked_signal_off)

@@ -1,9 +1,14 @@
 # property-lead-scorer
 
 Public template: scores residential properties as exterior-renovation
-(siding/roofing) lead candidates from three signals -- property/roof age,
-tree-canopy coverage nearby, and storm/hail event history -- instead of
-guessing which homes in a service area are due for work.
+(siding/roofing) lead candidates from three always-on signals --
+property/roof age, tree-canopy coverage nearby, and storm/hail event
+history -- plus two optional signals for a downstream deployment to
+enable once its sources support them: a siding-material-age proxy
+(material + year built, for sources with no real renovation history) and
+real permit history (for sources that expose actual siding/roofing permit
+records) -- instead of guessing which homes in a service area are due for
+work.
 
 This is the generic/free version -- no real target towns, no client-tuned
 thresholds, no real data. See the full build for a real client
@@ -30,9 +35,14 @@ one scored, ranked, debuggable lead list:
 - `extscorer.scoring.basic` -- pure, client-agnostic scoring functions:
   property-age (leading signal), tree-canopy (a non-linear "bathtub"
   curve -- both heavy cover and a fully exposed site raise risk), and
-  storm-recency (lighter supporting signal), combined into one
-  `lead_score` with each component preserved for debugging, plus a
-  deterministic ranking tiebreak.
+  storm-recency (lighter supporting signal) are always evaluated;
+  siding-material-age (a proxy, opt-in) and real permit-history (opt-in,
+  and self-suppresses the siding-age proxy per parcel when both are
+  available -- see that module's own docstring) are two further optional
+  signals a downstream deployment can turn on per its own data sources.
+  All combine into one `lead_score` as a weighted average of whichever
+  signals are actually active for a given parcel, each component
+  preserved for debugging, plus a deterministic ranking tiebreak.
 - A Postgres client (`extscorer.db.client`) that upserts parcels (keyed
   per client+town+parcel id) and storm events (global reference data,
   keyed on NOAA's own event id).
@@ -116,7 +126,11 @@ methods and its `@register_source(...)` registration should look like.
   docstring.
 - **`extscorer.db.client`** -- `upsert_parcel` (keyed on `client_id,
   town, parcel_id`), `upsert_storm_event` (keyed on `source, event_id`,
-  no client scoping).
+  no client scoping). `upsert_parcel` preserves enrichment-only fields
+  (geocoding/canopy/storm/score/permit data) on a re-scrape that doesn't
+  provide them, rather than overwriting with `None` -- see its own
+  docstring for why this matters for any source whose own scrape never
+  populates those columns.
 
 A downstream deployment (like the full/paid repo) adds concrete source
 subclasses for real towns/datasets, seeds real client config, and digest
