@@ -63,7 +63,7 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "score_property_component": record.score_property_component,
         "score_canopy_component": record.score_canopy_component,
         "score_storm_component": record.score_storm_component,
-        "score_permit_component": record.score_permit_component,
+        "score_siding_component": record.score_siding_component,
         "raw_data": Jsonb(record.raw_data),
         "needs_review": record.needs_review,
         "review_reason": record.review_reason,
@@ -117,7 +117,7 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             permit_data_available, permit_history, exterior_permit_count,
             most_recent_exterior_permit_date, most_recent_exterior_permit_type,
             lead_score, score_property_component, score_canopy_component, score_storm_component,
-            score_permit_component,
+            score_siding_component,
             raw_data, needs_review, review_reason
         ) values (
             %(client_id)s, %(town)s, %(parcel_id)s, %(county)s, %(address)s, %(source_url)s,
@@ -129,7 +129,7 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             %(permit_data_available)s, %(permit_history)s, %(exterior_permit_count)s,
             %(most_recent_exterior_permit_date)s, %(most_recent_exterior_permit_type)s,
             %(lead_score)s, %(score_property_component)s, %(score_canopy_component)s, %(score_storm_component)s,
-            %(score_permit_component)s,
+            %(score_siding_component)s,
             %(raw_data)s, %(needs_review)s, %(review_reason)s
         )
         on conflict (client_id, town, parcel_id) do update set
@@ -164,7 +164,7 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             score_property_component = coalesce(excluded.score_property_component, parcels.score_property_component),
             score_canopy_component = coalesce(excluded.score_canopy_component, parcels.score_canopy_component),
             score_storm_component = coalesce(excluded.score_storm_component, parcels.score_storm_component),
-            score_permit_component = coalesce(excluded.score_permit_component, parcels.score_permit_component),
+            score_siding_component = coalesce(excluded.score_siding_component, parcels.score_siding_component),
             raw_data = excluded.raw_data,
             needs_review = excluded.needs_review,
             review_reason = excluded.review_reason,
@@ -221,7 +221,7 @@ def update_parcel_lead_score(
     score_property_component: float | None,
     score_canopy_component: float | None,
     score_storm_component: float | None,
-    score_permit_component: float | None = None,
+    score_siding_component: float | None = None,
 ) -> dict[str, Any]:
     """Backfill one parcel row's `lead_score`/per-component fields by its
     own primary key (`id`) -- every other column is left untouched.
@@ -240,7 +240,7 @@ def update_parcel_lead_score(
                 score_property_component = %(property_component)s,
                 score_canopy_component = %(canopy_component)s,
                 score_storm_component = %(storm_component)s,
-                score_permit_component = %(permit_component)s,
+                score_siding_component = %(siding_component)s,
                 updated_at = now()
             where id = %(id)s
             returning *
@@ -251,7 +251,7 @@ def update_parcel_lead_score(
                 "property_component": score_property_component,
                 "canopy_component": score_canopy_component,
                 "storm_component": score_storm_component,
-                "permit_component": score_permit_component,
+                "siding_component": score_siding_component,
             },
         )
         row = cur.fetchone()

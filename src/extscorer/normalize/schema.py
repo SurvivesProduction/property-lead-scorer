@@ -45,9 +45,10 @@ class ParcelLeadRecord(BaseModel):
     implementation of both).
 
     `lead_score`/`score_property_component`/`score_canopy_component`/
-    `score_storm_component` are populated by the scoring layer
-    (`extscorer.scoring.basic`), not by any `LeadDataSource` -- left
-    `None` on a freshly-normalized record straight out of a scraper.
+    `score_storm_component`/`score_siding_component` are populated by the
+    scoring layer (`extscorer.scoring.basic`), not by any
+    `LeadDataSource` -- left `None` on a freshly-normalized record
+    straight out of a scraper.
 
     `needs_review`/`review_reason` follow Tool 1/2/3's precedent: a
     source that hits missing/unparseable data on an otherwise-required
@@ -110,7 +111,7 @@ class ParcelLeadRecord(BaseModel):
     score_property_component: float | None = None
     score_canopy_component: float | None = None
     score_storm_component: float | None = None
-    score_permit_component: float | None = None
+    score_siding_component: float | None = None
     raw_data: dict[str, Any] = Field(default_factory=dict)
     needs_review: bool = False
     review_reason: str | None = None

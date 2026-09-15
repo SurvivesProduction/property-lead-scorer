@@ -4,15 +4,15 @@ import pytest
 
 from extscorer.scoring.basic import (
     DEFAULT_CANOPY_WEIGHT,
-    DEFAULT_PERMIT_LOOKBACK_YEARS,
     DEFAULT_PROPERTY_WEIGHT,
     DEFAULT_STORM_WEIGHT,
     canopy_score,
-    permit_history_score,
     property_age_score,
     rank_candidates,
+    real_siding_age_score,
     score_property,
     siding_age_score,
+    siding_score,
     storm_score,
 )
 
@@ -170,7 +170,10 @@ def test_score_property_returns_lead_score_when_qualified() -> None:
         "year_built": 1990,
         "living_area_sqft": 2000,
     }
-    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
+    # Isolated to the original three signals -- siding is on by default
+    # now, tested separately below, and would otherwise add a fourth
+    # reason line and a neutral-0.5 component here (no exterior_wall_1 set).
+    lead = score_property(parcel, enable_siding_signal=False, as_of_year=_AS_OF_YEAR)
     assert lead is not None
     assert lead.parcel_id == "1"
     assert 0.0 < lead.score <= 1.0
@@ -192,7 +195,9 @@ def test_score_property_high_priority_case() -> None:
         "pct_tree_canopy_nearby": 35.0,  # exactly optimal -> lowest canopy risk
         "nearest_storm_event_date": date(_AS_OF_YEAR, 5, 19),
     }
-    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
+    # Isolated to the original three signals -- see the equivalent note on
+    # test_score_property_returns_lead_score_when_qualified above.
+    lead = score_property(parcel, enable_siding_signal=False, as_of_year=_AS_OF_YEAR)
     assert lead is not None
     assert lead.property_component > 0.95
     assert lead.canopy_component == 0.0
@@ -214,7 +219,9 @@ def test_score_property_low_priority_case() -> None:
         "living_area_sqft": 1200,
         "pct_tree_canopy_nearby": 96.0,  # near max canopy risk
     }
-    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
+    # Isolated to the original three signals -- see the equivalent note on
+    # test_score_property_returns_lead_score_when_qualified above.
+    lead = score_property(parcel, enable_siding_signal=False, as_of_year=_AS_OF_YEAR)
     assert lead is not None
     assert lead.property_component < 0.1
     assert lead.canopy_component > 0.9
@@ -295,8 +302,11 @@ def test_siding_age_score_neutral_when_year_built_missing() -> None:
 
 
 def test_siding_age_score_neutral_for_unrecognized_material() -> None:
-    # Brick/stone/composite -- no established heuristic for these yet.
-    assert siding_age_score({"exterior_wall_1": "Brick", "year_built": 1950}) == 0.5
+    # Brick/stone/masonry etc. are now classified as durable_original (a
+    # real fix, 2026-09-15 -- see _DURABLE_MATERIAL_KEYWORDS' own
+    # comment); "Average" is a real VGSI value confirmed to still fall
+    # through genuinely unclassified (not a material description at all).
+    assert siding_age_score({"exterior_wall_1": "Average", "year_built": 1950}) == 0.5
 
 
 def test_siding_age_score_vinyl_pre_1975_is_not_prime() -> None:
@@ -321,6 +331,23 @@ def test_siding_age_score_aluminum_and_asbestos_use_the_same_durable_curve() -> 
     aluminum = siding_age_score({"exterior_wall_1": "Aluminum Siding", "year_built": parcel_year})
     asbestos = siding_age_score({"exterior_wall_1": "Asbestos Shingle", "year_built": parcel_year})
     assert wood == pytest.approx(aluminum) == pytest.approx(asbestos)
+
+
+def test_classify_wall_material_catches_real_variants_missed_before_2026_09_15() -> None:
+    # Regression test for a real bug found while recalibrating (Prompt S):
+    # these are real, common exterior_wall_1/Siding values from the live
+    # data that used to silently fall through to "other" (a flat neutral
+    # 0.5, contributing zero signal) -- confirmed via a real percentile
+    # analysis that 27% of the qualifying population was pinned at
+    # exactly 0.5 before this fix, dominated by "Clapboard"/"Clapboards"
+    # (211 of 1,182 parcels, 18%, the single most common material in the
+    # real data) alongside VGSI's abbreviated "Asbest Shingle" and
+    # "Pre-finsh Metl". All of these must classify as durable_original,
+    # matching Wood Shingle's own curve, not fall back to neutral.
+    parcel_year = 1950
+    wood = siding_age_score({"exterior_wall_1": "Wood Shingle", "year_built": parcel_year})
+    for real_value in ("Clapboard", "Clapboards", "Asbest Shingle", "Pre-finsh Metl", "Board & Batten", "Brick/Masonry"):
+        assert siding_age_score({"exterior_wall_1": real_value, "year_built": parcel_year}) == pytest.approx(wood), real_value
 
 
 def test_siding_age_score_durable_material_decays_smoothly_after_the_never_resided_year() -> None:
@@ -420,11 +447,10 @@ def test_siding_age_score_never_exceeds_bounds() -> None:
 # --- score_property / rank_candidates wiring ---------------------------
 
 
-def test_score_property_siding_signal_disabled_by_default_matches_prior_behavior() -> None:
-    # Backward-compatibility guarantee: with the flag left at its default
-    # (False), score_property must behave EXACTLY as it did before this
-    # signal existed -- same score, siding_age_component left None, no
-    # extra reason line.
+def test_score_property_siding_signal_enabled_by_default() -> None:
+    # The siding signal is ON by default (unlike its original opt-in-only
+    # history) -- a plain score_property call with no override populates
+    # siding_component and adds the fourth reason line.
     parcel = {
         "parcel_id": "1",
         "town": "Canterbury",
@@ -437,15 +463,37 @@ def test_score_property_siding_signal_disabled_by_default_matches_prior_behavior
     }
     lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
     assert lead is not None
-    assert lead.siding_age_component is None
+    assert lead.siding_component is not None
+    assert len(lead.reasons) == 4
+
+
+def test_score_property_siding_signal_disabled_matches_three_signal_formula() -> None:
+    # With the flag explicitly off, score_property falls back to the
+    # plain property/canopy/storm weighted average -- siding_component
+    # left None, no fourth reason line.
+    parcel = {
+        "parcel_id": "1",
+        "town": "Canterbury",
+        "address": "1 Old House Rd",
+        "year_built": 1900,
+        "living_area_sqft": 2200,
+        "exterior_wall_1": "Wood Shingle",
+        "pct_tree_canopy_nearby": 35.0,
+        "nearest_storm_event_date": date(_AS_OF_YEAR, 5, 19),
+    }
+    lead = score_property(parcel, enable_siding_signal=False, as_of_year=_AS_OF_YEAR)
+    assert lead is not None
+    assert lead.siding_component is None
     assert len(lead.reasons) == 3  # no fourth (siding) reason line when disabled
-    # Same weighted-average identity as the pre-signal formula, since
-    # property_weight+canopy_weight+storm_weight already sum to 1.0.
+    # A weighted AVERAGE, not a weighted sum -- property/canopy/storm no
+    # longer sum to 1.0 on their own now that siding_weight claims a real
+    # share, so the three active weights' own sum is the real denominator.
+    total_weight = DEFAULT_PROPERTY_WEIGHT + DEFAULT_CANOPY_WEIGHT + DEFAULT_STORM_WEIGHT
     expected = (
         DEFAULT_PROPERTY_WEIGHT * lead.property_component
         + DEFAULT_CANOPY_WEIGHT * lead.canopy_component
         + DEFAULT_STORM_WEIGHT * lead.storm_component
-    )
+    ) / total_weight
     assert lead.score == pytest.approx(expected)
 
 
@@ -459,10 +507,10 @@ def test_score_property_siding_signal_enabled_populates_component_and_reason() -
         "exterior_wall_1": "Wood Shingle",
         "pct_tree_canopy_nearby": 35.0,
     }
-    lead = score_property(parcel, enable_siding_age_signal=True, as_of_year=_AS_OF_YEAR)
+    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
     assert lead is not None
-    assert lead.siding_age_component is not None
-    assert lead.siding_age_component > 0.95  # prime wood/pre-1990 case
+    assert lead.siding_component is not None
+    assert lead.siding_component > 0.95  # prime wood/pre-1990 case
     assert len(lead.reasons) == 4
     assert "Wood Shingle" in lead.reasons[-1]
     assert 0.0 <= lead.score <= 1.0
@@ -483,12 +531,12 @@ def test_score_property_siding_signal_enabled_still_bounded_when_all_components_
         "pct_tree_canopy_nearby": 95.0,
         "nearest_storm_event_date": date(_AS_OF_YEAR, 5, 19),
     }
-    lead = score_property(parcel, enable_siding_age_signal=True, as_of_year=_AS_OF_YEAR)
+    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
     assert lead is not None
     assert lead.score <= 1.0
 
 
-def test_rank_candidates_siding_signal_disabled_by_default_matches_prior_ranking() -> None:
+def test_rank_candidates_siding_signal_disabled_excludes_it_entirely() -> None:
     parcels = [
         {
             "parcel_id": "A",
@@ -500,63 +548,105 @@ def test_rank_candidates_siding_signal_disabled_by_default_matches_prior_ranking
         {"parcel_id": "B", "town": "Canterbury", "address": "b", "year_built": 1990},
     ]
     ranked_default = rank_candidates(parcels, as_of_year=_AS_OF_YEAR)
-    ranked_explicit_off = rank_candidates(parcels, enable_siding_age_signal=False, as_of_year=_AS_OF_YEAR)
-    assert [lead.score for lead in ranked_default] == [lead.score for lead in ranked_explicit_off]
-    assert all(lead.siding_age_component is None for lead in ranked_default)
+    ranked_signal_off = rank_candidates(parcels, enable_siding_signal=False, as_of_year=_AS_OF_YEAR)
+    assert all(lead.siding_component is not None for lead in ranked_default)  # on by default
+    assert all(lead.siding_component is None for lead in ranked_signal_off)
+    assert [lead.score for lead in ranked_default] != [lead.score for lead in ranked_signal_off]
 
 
-def test_siding_age_score_steps_aside_when_permit_data_available() -> None:
-    assert siding_age_score({"exterior_wall_1": "Vinyl Siding", "year_built": 1920, "permit_data_available": True}) is None
+def test_siding_age_score_ignores_permit_data_available() -> None:
+    # siding_age_score is the pure PROXY function -- it always runs the
+    # proxy logic regardless of permit_data_available; dispatch between
+    # real and proxy modes is siding_score()'s job alone (see its own
+    # docstring). Calling siding_age_score directly on a permit-tracked
+    # parcel still returns the proxy's real computed value, not None.
+    with_permit_flag = siding_age_score({"exterior_wall_1": "Vinyl Siding", "year_built": 1920, "permit_data_available": True})
+    without_permit_flag = siding_age_score({"exterior_wall_1": "Vinyl Siding", "year_built": 1920})
+    assert with_permit_flag == without_permit_flag
+    assert with_permit_flag is not None
 
 
-def test_permit_history_score_none_when_source_has_no_permit_visibility() -> None:
-    assert permit_history_score({"permit_data_available": False}) is None
-    assert permit_history_score({}) is None
+def test_real_siding_age_score_none_when_source_has_no_permit_visibility() -> None:
+    assert real_siding_age_score({"permit_data_available": False}) is None
+    assert real_siding_age_score({}) is None
 
 
-def test_permit_history_score_full_when_available_but_no_exterior_permit_found() -> None:
-    assert permit_history_score({"permit_data_available": True, "exterior_permit_count": 0}) == 1.0
+def test_real_siding_age_score_neutral_when_material_or_year_built_missing() -> None:
+    assert real_siding_age_score({"permit_data_available": True}) == 0.5
+    assert real_siding_age_score({"permit_data_available": True, "exterior_wall_1": "Clapboards"}) == 0.5
 
 
-def test_permit_history_score_zero_right_after_a_recent_exterior_permit() -> None:
-    score = permit_history_score(
-        {"permit_data_available": True, "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 3, 1)},
+def test_real_siding_age_score_zero_right_after_a_confirmed_permit() -> None:
+    score = real_siding_age_score(
+        {
+            "permit_data_available": True,
+            "exterior_wall_1": "Clapboards",
+            "year_built": 1950,
+            "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 3, 1),
+        },
         as_of_year=_AS_OF_YEAR,
     )
     assert score == 0.0
 
 
-def test_permit_history_score_decays_linearly_back_to_one() -> None:
-    halfway_years = DEFAULT_PERMIT_LOOKBACK_YEARS // 2
-    score = permit_history_score(
-        {
-            "permit_data_available": True,
-            "most_recent_exterior_permit_date": date(_AS_OF_YEAR - halfway_years, 6, 1),
-        },
+def test_real_siding_age_score_falls_back_to_year_built_when_no_permit_on_file() -> None:
+    # No exterior-relevant permit -> effective redo year is year_built
+    # itself (presumed never redone), same fallback direction the proxy
+    # uses everywhere.
+    old_house = real_siding_age_score(
+        {"permit_data_available": True, "exterior_wall_1": "Clapboards", "year_built": 1900, "exterior_permit_count": 0},
         as_of_year=_AS_OF_YEAR,
     )
-    assert score == pytest.approx(halfway_years / DEFAULT_PERMIT_LOOKBACK_YEARS)
-
-
-def test_permit_history_score_saturates_at_one_past_the_lookback_window() -> None:
-    score = permit_history_score(
-        {
-            "permit_data_available": True,
-            "most_recent_exterior_permit_date": date(_AS_OF_YEAR - DEFAULT_PERMIT_LOOKBACK_YEARS - 5, 6, 1),
-        },
+    new_house = real_siding_age_score(
+        {"permit_data_available": True, "exterior_wall_1": "Clapboards", "year_built": 2020, "exterior_permit_count": 0},
         as_of_year=_AS_OF_YEAR,
     )
-    assert score == 1.0
+    assert old_house > new_house
+    assert old_house > 0.9
+    assert new_house < 0.5
 
 
-def test_score_property_permit_signal_is_none_when_source_lacks_permit_data() -> None:
-    parcel = {"parcel_id": "1", "town": "Killingly", "address": "1 Main St", "year_built": 1950}
-    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
-    assert lead is not None
-    assert lead.permit_component is None
+def test_real_siding_age_score_vinyl_saturates_faster_than_durable_material() -> None:
+    # Same effective redo year (no permit, fall back to year_built), same
+    # years-since-redone -- vinyl's shorter real-world lifespan means it
+    # should score HIGHER (more overdue) than a durable material at the
+    # identical age.
+    year_built = _AS_OF_YEAR - 25
+    vinyl = real_siding_age_score(
+        {"permit_data_available": True, "exterior_wall_1": "Vinyl Siding", "year_built": year_built},
+        as_of_year=_AS_OF_YEAR,
+    )
+    durable = real_siding_age_score(
+        {"permit_data_available": True, "exterior_wall_1": "Wood Shingle", "year_built": year_built},
+        as_of_year=_AS_OF_YEAR,
+    )
+    assert vinyl > durable
 
 
-def test_score_property_recent_exterior_permit_lowers_score_vs_no_permit_data() -> None:
+def test_real_siding_age_score_never_exceeds_bounds() -> None:
+    ancient = real_siding_age_score(
+        {"permit_data_available": True, "exterior_wall_1": "Vinyl Siding", "year_built": 1700},
+        as_of_year=_AS_OF_YEAR,
+    )
+    assert 0.0 <= ancient <= 1.0
+
+
+def test_siding_score_dispatches_to_real_mode_when_permit_data_available() -> None:
+    real_mode_parcel = {
+        "permit_data_available": True,
+        "exterior_wall_1": "Vinyl Siding",
+        "year_built": 1950,
+        "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 1, 1),
+    }
+    assert siding_score(real_mode_parcel, as_of_year=_AS_OF_YEAR) == real_siding_age_score(real_mode_parcel, as_of_year=_AS_OF_YEAR)
+
+
+def test_siding_score_dispatches_to_proxy_mode_when_no_permit_visibility() -> None:
+    proxy_parcel = {"exterior_wall_1": "Wood Shingle", "year_built": 1900}
+    assert siding_score(proxy_parcel, as_of_year=_AS_OF_YEAR) == siding_age_score(proxy_parcel)
+
+
+def test_score_property_recent_exterior_permit_lowers_score_vs_never_redone() -> None:
     base_parcel = {
         "parcel_id": "1",
         "town": "Killingly",
@@ -564,34 +654,34 @@ def test_score_property_recent_exterior_permit_lowers_score_vs_no_permit_data() 
         "year_built": 1950,
         "living_area_sqft": 1800,
         "pct_tree_canopy_nearby": 35.0,
+        "exterior_wall_1": "Vinyl Siding",
+        "permit_data_available": True,
     }
-    no_permit_visibility = score_property(base_parcel, as_of_year=_AS_OF_YEAR)
     recently_addressed = score_property(
-        {**base_parcel, "permit_data_available": True, "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 1, 1)},
+        {**base_parcel, "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 1, 1)},
         as_of_year=_AS_OF_YEAR,
     )
-    never_addressed = score_property(
-        {**base_parcel, "permit_data_available": True, "exterior_permit_count": 0},
-        as_of_year=_AS_OF_YEAR,
-    )
-    assert no_permit_visibility is not None and recently_addressed is not None and never_addressed is not None
-    assert recently_addressed.permit_component == 0.0
-    assert never_addressed.permit_component == 1.0
-    assert recently_addressed.score < no_permit_visibility.score < never_addressed.score
+    never_addressed = score_property({**base_parcel, "exterior_permit_count": 0}, as_of_year=_AS_OF_YEAR)
+    assert recently_addressed is not None and never_addressed is not None
+    assert recently_addressed.siding_component == 0.0
+    assert never_addressed.siding_component is not None and never_addressed.siding_component > 0.0
+    assert recently_addressed.score < never_addressed.score
 
 
-def test_rank_candidates_permit_signal_disabled_matches_signal_free_ranking() -> None:
-    parcels = [
-        {
-            "parcel_id": "A",
-            "town": "Killingly",
-            "address": "a",
-            "year_built": 1950,
-            "permit_data_available": True,
-            "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 1, 1),  # would score very differently with signal ON
-        },
-        {"parcel_id": "B", "town": "Killingly", "address": "b", "year_built": 1950},
-    ]
-    ranked_signal_off = rank_candidates(parcels, enable_permit_signal=False, as_of_year=_AS_OF_YEAR)
-    assert ranked_signal_off[0].score == ranked_signal_off[1].score
-    assert all(lead.permit_component is None for lead in ranked_signal_off)
+def test_score_property_real_mode_siding_reason_mentions_permit() -> None:
+    parcel = {
+        "parcel_id": "1",
+        "town": "Killingly",
+        "address": "1 Main St",
+        "year_built": 1950,
+        "living_area_sqft": 1800,
+        "exterior_wall_1": "Clapboards",
+        "permit_data_available": True,
+        "most_recent_exterior_permit_date": date(2020, 5, 1),
+        "most_recent_exterior_permit_type": "Roofing",
+    }
+    lead = score_property(parcel, as_of_year=_AS_OF_YEAR)
+    assert lead is not None
+    assert "Siding: Clapboards" in lead.reasons[-1]
+    assert "Roofing" in lead.reasons[-1]
+    assert "2020-05-01" in lead.reasons[-1]
