@@ -24,6 +24,18 @@ digest send surfaced as a real gap: Killingly/Ashford/Woodstock leads
 were showing up on the list for reasons the copy never explained. Check
 this file's own clause list against `score_property`'s active signals
 whenever either changes.
+
+**Storm clause is visually de-emphasized in HTML (added 2026-09-15,
+Prompt U)**: the storm-recency clause is IDENTICAL across every real
+lead as of this writing (see `extscorer.scoring.basic`'s own module
+docstring -- `storm_score` is still a pure constant across the whole real
+population), so it carries no real differentiating information for the
+reader even though it's a real fact. `describe_lead_parts` splits it out
+from the other clauses so the HTML renderer can style it smaller/lighter
+than the real differentiating signals (property age, siding, canopy)
+without it visually competing for attention. The plain-text renderer has
+no such styling concept, so `describe_lead` still folds it into one
+sentence for that path.
 """
 from __future__ import annotations
 
@@ -87,14 +99,19 @@ def _describe_siding(parcel: dict[str, Any], as_of_year: int) -> str | None:
     return f"the exterior siding ({material}) looks original to the house, based on town property records"
 
 
-def describe_lead(parcel: dict[str, Any], as_of_year: int) -> str:
-    """One short, plain-language sentence set explaining why a property
-    made the list -- built from real signal values, not internal scores.
+def _capitalize_sentence(clauses: list[str]) -> str:
+    # Capitalize only the first character -- str.capitalize() would also
+    # lowercase everything after it (e.g. turning "May 19" into "may 19"),
+    # which a real test caught.
+    sentence = "; ".join(clauses) + "."
+    return sentence[0].upper() + sentence[1:]
 
-    Clause order follows the signals' own weight order (property age,
-    then siding, then canopy, then storm -- see `extscorer.scoring.basic`'s
-    module docstring), so the most important reason a property made the
-    list reads first.
+
+def _describe_main_clauses(parcel: dict[str, Any], as_of_year: int) -> list[str]:
+    """Property age, siding, and canopy clauses, in that order -- the
+    signals' own weight order (see `extscorer.scoring.basic`'s module
+    docstring) minus storm, which `describe_lead_parts` renders
+    separately (see this module's own "Storm clause" docstring note).
     """
     clauses: list[str] = []
 
@@ -115,17 +132,47 @@ def describe_lead(parcel: dict[str, Any], as_of_year: int) -> str:
         else:
             clauses.append(f"little tree cover nearby ({pct:.0f}%), leaving the roof more exposed to sun and wind")
 
+    return clauses
+
+
+def _describe_storm(parcel: dict[str, Any]) -> str | None:
     storm_date = parcel.get("nearest_storm_event_date")
-    if storm_date is not None:
-        clauses.append(f"a storm was recorded in the area on {_format_storm_date(storm_date)}")
+    if storm_date is None:
+        return None
+    return f"a storm was recorded in the area on {_format_storm_date(storm_date)}"
+
+
+def describe_lead(parcel: dict[str, Any], as_of_year: int) -> str:
+    """One short, plain-language sentence explaining why a property made
+    the list -- built from real signal values, not internal scores. Used
+    by the plain-text renderer, which has no way to visually de-emphasize
+    the storm clause the way `describe_lead_parts` lets the HTML renderer
+    do -- folds every clause (including storm) into one sentence.
+    """
+    clauses = _describe_main_clauses(parcel, as_of_year)
+    storm_clause = _describe_storm(parcel)
+    if storm_clause is not None:
+        clauses.append(storm_clause)
 
     if not clauses:
         return "On our list based on property age."
-    # Capitalize only the first character -- str.capitalize() would also
-    # lowercase everything after it (e.g. turning "May 19" into "may 19"),
-    # which a real test caught.
-    sentence = "; ".join(clauses) + "."
-    return sentence[0].upper() + sentence[1:]
+    return _capitalize_sentence(clauses)
+
+
+def describe_lead_parts(parcel: dict[str, Any], as_of_year: int) -> tuple[str, str | None]:
+    """(main_sentence, storm_sentence) -- used by the HTML renderer to
+    style the storm clause smaller/lighter than the real differentiating
+    signals (see this module's own "Storm clause" docstring note).
+    `storm_sentence` is `None` when there's no storm data on file, same
+    as every other "not on file" convention here.
+    """
+    clauses = _describe_main_clauses(parcel, as_of_year)
+    main_sentence = _capitalize_sentence(clauses) if clauses else "On our list based on property age."
+
+    storm_clause = _describe_storm(parcel)
+    storm_sentence = _capitalize_sentence([storm_clause]) if storm_clause is not None else None
+
+    return main_sentence, storm_sentence
 
 
 def render_digest_text(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_of_year: int) -> str:
@@ -141,6 +188,9 @@ def render_digest_text(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         lines.append(f"{i}. {parcel.get('address', 'Unknown address')}, {parcel.get('town', '')}")
         lines.append(f"   {describe_lead(parcel, as_of_year)}")
+        source_url = parcel.get("source_url")
+        if source_url:
+            lines.append(f"   Verify this property: {source_url}")
         lines.append("")
     return "\n".join(lines)
 
@@ -168,12 +218,38 @@ def render_digest_html(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         address = _esc(parcel.get("address", "Unknown address"))
         town = _esc(parcel.get("town", ""))
-        description = _esc(describe_lead(parcel, as_of_year))
+        main_sentence, storm_sentence = describe_lead_parts(parcel, as_of_year)
+        description = _esc(main_sentence)
+        if storm_sentence is not None:
+            # Smaller, lighter-weight, muted-color -- identical across
+            # every property (see module docstring), so it shouldn't
+            # visually compete with the real differentiating signals in
+            # the sentence above it.
+            description += (
+                f' <span style="font-size:11px;font-weight:400;color:{_COLOR_MUTED};">{_esc(storm_sentence)}</span>'
+            )
+
+        # Only ever link a real, already-stored per-record URL -- never
+        # fabricate or guess one (this project's standing "only hyperlink
+        # where a real stable URL exists" rule). `source_url` is our own
+        # scraper's own VGSI/propertyrecordcards.com card link, trusted
+        # content from our own database, not user input -- still escaped
+        # defensively before going into the href.
+        source_url = parcel.get("source_url")
+        verify_link = ""
+        if source_url:
+            verify_link = (
+                f'<div style="margin-top:8px;">'
+                f'<a href="{_esc(source_url)}" style="font-size:12px;color:{_COLOR_ACCENT};text-decoration:none;font-weight:600;">'
+                f"Verify this property &rarr;</a></div>"
+            )
+
         rows.append(
             f'<div style="padding:16px 0;border-top:1px solid {_COLOR_BORDER};">'
             f'<div style="font-size:12px;color:{_COLOR_MUTED};">#{i}</div>'
             f'<div style="font-size:16px;font-weight:700;color:{_COLOR_INK};margin-top:2px;">{address}, {town}</div>'
             f'<div style="font-size:14px;color:{_COLOR_INK};margin-top:6px;line-height:1.5;">{description}</div>'
+            f"{verify_link}"
             f"</div>"
         )
 

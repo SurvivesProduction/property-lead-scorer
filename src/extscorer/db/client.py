@@ -47,6 +47,9 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "exterior_wall_2": record.exterior_wall_2,
         "building_percent_good": record.building_percent_good,
         "siding_data_source": record.siding_data_source,
+        "owner_name": record.owner_name,
+        "owner_mailing_address": record.owner_mailing_address,
+        "is_absentee_owner": record.is_absentee_owner,
         "latitude": record.latitude,
         "longitude": record.longitude,
         "pct_tree_canopy_nearby": record.pct_tree_canopy_nearby,
@@ -64,6 +67,8 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "score_canopy_component": record.score_canopy_component,
         "score_storm_component": record.score_storm_component,
         "score_siding_component": record.score_siding_component,
+        "has_tax_delinquency": record.has_tax_delinquency,
+        "tax_outstanding_balance": record.tax_outstanding_balance,
         "raw_data": Jsonb(record.raw_data),
         "needs_review": record.needs_review,
         "review_reason": record.review_reason,
@@ -105,12 +110,25 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
     permit_date`/`most_recent_exterior_permit_type` all default to `None`
     on an unenriched record, so plain coalesce already does the right
     thing for those.
+
+    `owner_name`/`owner_mailing_address`/`is_absentee_owner` (2026-09-15,
+    Prompt U) are scrape-native like `exterior_wall_1` etc -- both VGSI and
+    `propertyrecordcards.com` populate real owner-of-record data on every
+    run, so these blind-overwrite on `excluded`, no coalesce needed.
+    `has_tax_delinquency` has the SAME `False`-isn't-`NULL` problem as
+    `permit_data_available` above (it's an enrichment-only field a bare
+    re-scrape never touches, so its incoming default is always `False`,
+    not `None`) -- same OR-based fix: only ever moves True via the real
+    `backfill_tax_delinquency.py` pass, never reset by an ordinary
+    re-scrape. `tax_outstanding_balance` defaults to `None` on an
+    unenriched record, so plain coalesce is correct for it.
     """
     query = """
         insert into parcels (
             client_id, town, parcel_id, county, address, source_url,
             year_built, living_area_sqft, roof_cover_material,
             exterior_wall_1, exterior_wall_2, building_percent_good, siding_data_source,
+            owner_name, owner_mailing_address, is_absentee_owner,
             latitude, longitude,
             pct_tree_canopy_nearby, canopy_data_year, canopy_source,
             nearest_storm_event_date, storm_event_summary,
@@ -118,11 +136,13 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             most_recent_exterior_permit_date, most_recent_exterior_permit_type,
             lead_score, score_property_component, score_canopy_component, score_storm_component,
             score_siding_component,
+            has_tax_delinquency, tax_outstanding_balance,
             raw_data, needs_review, review_reason
         ) values (
             %(client_id)s, %(town)s, %(parcel_id)s, %(county)s, %(address)s, %(source_url)s,
             %(year_built)s, %(living_area_sqft)s, %(roof_cover_material)s,
             %(exterior_wall_1)s, %(exterior_wall_2)s, %(building_percent_good)s, %(siding_data_source)s,
+            %(owner_name)s, %(owner_mailing_address)s, %(is_absentee_owner)s,
             %(latitude)s, %(longitude)s,
             %(pct_tree_canopy_nearby)s, %(canopy_data_year)s, %(canopy_source)s,
             %(nearest_storm_event_date)s, %(storm_event_summary)s,
@@ -130,6 +150,7 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             %(most_recent_exterior_permit_date)s, %(most_recent_exterior_permit_type)s,
             %(lead_score)s, %(score_property_component)s, %(score_canopy_component)s, %(score_storm_component)s,
             %(score_siding_component)s,
+            %(has_tax_delinquency)s, %(tax_outstanding_balance)s,
             %(raw_data)s, %(needs_review)s, %(review_reason)s
         )
         on conflict (client_id, town, parcel_id) do update set
@@ -143,6 +164,9 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             exterior_wall_2 = excluded.exterior_wall_2,
             building_percent_good = excluded.building_percent_good,
             siding_data_source = coalesce(excluded.siding_data_source, parcels.siding_data_source),
+            owner_name = excluded.owner_name,
+            owner_mailing_address = excluded.owner_mailing_address,
+            is_absentee_owner = excluded.is_absentee_owner,
             latitude = coalesce(excluded.latitude, parcels.latitude),
             longitude = coalesce(excluded.longitude, parcels.longitude),
             pct_tree_canopy_nearby = coalesce(excluded.pct_tree_canopy_nearby, parcels.pct_tree_canopy_nearby),
@@ -165,6 +189,14 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             score_canopy_component = coalesce(excluded.score_canopy_component, parcels.score_canopy_component),
             score_storm_component = coalesce(excluded.score_storm_component, parcels.score_storm_component),
             score_siding_component = coalesce(excluded.score_siding_component, parcels.score_siding_component),
+            -- has_tax_delinquency defaults to False (not NULL) on a record
+            -- that never touched it -- same problem plain coalesce already
+            -- has for permit_data_available above, and the same fix: only
+            -- move it True->False if the incoming row is the real
+            -- delinquency backfill saying so, never as a side effect of an
+            -- ordinary re-scrape (which never sets this field at all).
+            has_tax_delinquency = (excluded.has_tax_delinquency or parcels.has_tax_delinquency),
+            tax_outstanding_balance = coalesce(excluded.tax_outstanding_balance, parcels.tax_outstanding_balance),
             raw_data = excluded.raw_data,
             needs_review = excluded.needs_review,
             review_reason = excluded.review_reason,
@@ -311,6 +343,46 @@ def update_parcel_permit_and_siding_fields(
                 "exterior_permit_count": exterior_permit_count,
                 "most_recent_exterior_permit_date": most_recent_exterior_permit_date,
                 "most_recent_exterior_permit_type": most_recent_exterior_permit_type,
+            },
+        )
+        row = cur.fetchone()
+    conn.commit()
+    assert row is not None
+    return row
+
+
+def update_parcel_tax_delinquency_fields(
+    conn: psycopg.Connection,
+    parcel_id: Any,
+    has_tax_delinquency: bool,
+    tax_outstanding_balance: float | None,
+) -> dict[str, Any]:
+    """Backfill one parcel row's mytaxbill.org delinquency fields by its own
+    primary key (`id`) -- every other column is left untouched.
+
+    Built for `property-lead-scorer-full/scripts/backfill_tax_delinquency.py`
+    (2026-09-15, Prompt U): a real per-parcel lookup against mytaxbill.org
+    (a shared CT municipal tax portal covering all 8 target towns), run as
+    a separate enrichment pass well after the initial scrape -- same
+    idempotent-refresh convention as `update_parcel_storm_fields`/
+    `update_parcel_canopy_fields`: always writes the current computed
+    value (including `False`/`None` for a parcel confirmed current on
+    taxes), safe to rerun.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            update parcels
+            set has_tax_delinquency = %(has_tax_delinquency)s,
+                tax_outstanding_balance = %(tax_outstanding_balance)s,
+                updated_at = now()
+            where id = %(id)s
+            returning *
+            """,
+            {
+                "id": parcel_id,
+                "has_tax_delinquency": has_tax_delinquency,
+                "tax_outstanding_balance": tax_outstanding_balance,
             },
         )
         row = cur.fetchone()

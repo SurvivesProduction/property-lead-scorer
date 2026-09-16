@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from extscorer.digest.copy import describe_lead, render_digest_html, render_digest_text
+from extscorer.digest.copy import describe_lead, describe_lead_parts, render_digest_html, render_digest_text
 
 _AS_OF_YEAR = 2026
 
@@ -143,3 +143,98 @@ def test_render_digest_html_escapes_address_content() -> None:
     leads = [(object(), {"address": "1 <script>alert(1)</script> Rd", "town": "Canterbury"})]
     html = render_digest_html(leads, _AS_OF_YEAR)
     assert "<script>" not in html
+
+
+def test_describe_lead_parts_splits_storm_out_of_main_sentence() -> None:
+    main, storm = describe_lead_parts(
+        {"year_built": 1900, "nearest_storm_event_date": date(2026, 5, 19)},
+        _AS_OF_YEAR,
+    )
+    assert "1900" in main
+    assert "storm" not in main.lower()
+    assert storm is not None
+    assert "May 19, 2026" in storm
+
+
+def test_describe_lead_parts_storm_is_none_when_no_storm_data() -> None:
+    main, storm = describe_lead_parts({"year_built": 1900}, _AS_OF_YEAR)
+    assert "1900" in main
+    assert storm is None
+
+
+def test_describe_lead_parts_main_sentence_matches_describe_lead_minus_storm() -> None:
+    # describe_lead_parts must not silently diverge from describe_lead's
+    # own clause content -- same underlying _describe_main_clauses.
+    parcel = {
+        "year_built": 1900,
+        "exterior_wall_1": "Clapboards",
+        "pct_tree_canopy_nearby": 96.0,
+        "nearest_storm_event_date": date(2026, 5, 19),
+    }
+    full_text = describe_lead(parcel, _AS_OF_YEAR)
+    main, storm = describe_lead_parts(parcel, _AS_OF_YEAR)
+    assert main.rstrip(".") in full_text
+    assert storm is not None
+
+
+def test_describe_lead_parts_handles_missing_signals_gracefully() -> None:
+    main, storm = describe_lead_parts({}, _AS_OF_YEAR)
+    assert main
+    assert storm is None
+
+
+def test_render_digest_text_includes_verify_link_when_source_url_present() -> None:
+    leads = [
+        (object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900, "source_url": "https://gis.vgsi.com/canterburyct/Parcel.aspx?pid=1329"}),
+    ]
+    text = render_digest_text(leads, _AS_OF_YEAR)
+    assert "Verify this property: https://gis.vgsi.com/canterburyct/Parcel.aspx?pid=1329" in text
+
+
+def test_render_digest_text_omits_verify_link_when_no_source_url() -> None:
+    leads = [(object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900})]
+    text = render_digest_text(leads, _AS_OF_YEAR)
+    assert "Verify this property" not in text
+
+
+def test_render_digest_html_includes_verify_link_when_source_url_present() -> None:
+    leads = [
+        (object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900, "source_url": "https://gis.vgsi.com/canterburyct/Parcel.aspx?pid=1329"}),
+    ]
+    html = render_digest_html(leads, _AS_OF_YEAR)
+    assert 'href="https://gis.vgsi.com/canterburyct/Parcel.aspx?pid=1329"' in html
+    assert "Verify this property" in html
+
+
+def test_render_digest_html_omits_verify_link_when_no_source_url() -> None:
+    leads = [(object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900})]
+    html = render_digest_html(leads, _AS_OF_YEAR)
+    assert "Verify this property" not in html
+
+
+def test_render_digest_html_escapes_source_url() -> None:
+    leads = [
+        (object(), {"address": "1 Old House Rd", "town": "Canterbury", "source_url": '"><script>alert(1)</script>'}),
+    ]
+    html = render_digest_html(leads, _AS_OF_YEAR)
+    assert "<script>" not in html
+
+
+def test_render_digest_html_styles_storm_clause_smaller_and_lighter() -> None:
+    leads = [
+        (object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900, "nearest_storm_event_date": date(2026, 5, 19)}),
+    ]
+    html = render_digest_html(leads, _AS_OF_YEAR)
+    assert "font-size:11px" in html
+    assert "May 19, 2026" in html
+    # The storm sentence must be wrapped in its own de-emphasized span, not
+    # folded into the main-sentence div at the same weight/size.
+    storm_span_start = html.index("font-size:11px")
+    storm_idx = html.index("May 19, 2026")
+    assert storm_span_start < storm_idx
+
+
+def test_render_digest_html_no_storm_span_when_no_storm_data() -> None:
+    leads = [(object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900})]
+    html = render_digest_html(leads, _AS_OF_YEAR)
+    assert "font-size:11px" not in html

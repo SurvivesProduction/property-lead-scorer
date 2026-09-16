@@ -78,6 +78,26 @@ class ParcelLeadRecord(BaseModel):
     propertyrecordcards.com-sourced parcel's Siding value, since it's the
     same underlying concept (current exterior material) as VGSI's field;
     `siding_data_source` records which real source populated it.
+
+    `owner_name`/`owner_mailing_address`/`is_absentee_owner` added
+    2026-09-15 (Prompt U) -- both VGSI and propertyrecordcards.com expose
+    a real owner-of-record mailing address (VGSI: `#MainContent_
+    lblGenOwner`/`#MainContent_lblAddr1`; propertyrecordcards.com: the
+    "Owner's Information" table), confirmed live before building this.
+    `is_absentee_owner` is computed at normalize time (not scraped) by
+    comparing the mailing address against this same record's own
+    `address`/`town` -- see each source module's own normalize function
+    for the comparison logic; kept as a first-class field here (not
+    recomputed later from raw text) so a caller never has to re-parse
+    `owner_mailing_address` to answer "is this likely an absentee owner."
+
+    `has_tax_delinquency`/`tax_outstanding_balance` added the same day --
+    real per-parcel data from mytaxbill.org (a shared CT municipal tax
+    portal covering all 8 target towns, confirmed live, no login needed),
+    populated by a separate one-time/periodic enrichment backfill (see
+    `property-lead-scorer-full/scripts/backfill_tax_delinquency.py`), the
+    same "not scraped by any LeadDataSource, backfilled after the fact"
+    treatment `pct_tree_canopy_nearby`/`latitude`/`longitude` already get.
     """
 
     model_config = ConfigDict(str_strip_whitespace=True)
@@ -95,6 +115,9 @@ class ParcelLeadRecord(BaseModel):
     exterior_wall_2: str | None = None
     building_percent_good: int | None = None
     siding_data_source: str | None = None
+    owner_name: str | None = None
+    owner_mailing_address: str | None = None
+    is_absentee_owner: bool = False
     latitude: float | None = None
     longitude: float | None = None
     pct_tree_canopy_nearby: float | None = None
@@ -112,6 +135,8 @@ class ParcelLeadRecord(BaseModel):
     score_canopy_component: float | None = None
     score_storm_component: float | None = None
     score_siding_component: float | None = None
+    has_tax_delinquency: bool = False
+    tax_outstanding_balance: float | None = None
     raw_data: dict[str, Any] = Field(default_factory=dict)
     needs_review: bool = False
     review_reason: str | None = None
