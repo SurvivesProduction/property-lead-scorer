@@ -131,6 +131,32 @@ methods and its `@register_source(...)` registration should look like.
   provide them, rather than overwriting with `None` -- see its own
   docstring for why this matters for any source whose own scrape never
   populates those columns.
+- **`extscorer.normalize.address`** -- shared owner-mailing-address-vs-
+  property-address comparison (`is_owner_address_mismatch` and its
+  helpers). A mismatch is a real absentee-owner signal, not proof of
+  vacancy on its own -- see the module's own docstring for why it's a
+  deprioritization signal at the digest layer rather than a harder claim
+  baked into the schema. Also reused (2026-09-16) to match a permit-
+  history source's own address column against an already-scraped parcel's
+  address (`normalize_street_address`), not just for the absentee check.
+- **`extscorer.normalize.permits`** -- shared exterior-relevant-permit
+  classification (`is_exterior_permit`). A downstream deployment's real
+  permit-history sources both need the identical judgment call ("does this
+  permit's own type/description describe exterior work"), so the keyword
+  list lives in one place rather than drifting apart across sources.
+- **`extscorer.digest.copy`/`extscorer.digest.selection`** -- the
+  client-facing digest layer. `copy.py` renders a parcel's real signal
+  values (never raw scores) into plain language for a non-technical
+  reader, and must be updated in the same prompt as any change to
+  `scoring.basic`'s active signals or weights (see its own module
+  docstring's standing rule). `selection.py` picks which ranked leads
+  actually go out: `is_likely_unreachable_owner` excludes a parcel whose
+  owner's mailing address doesn't match the property address, or whose
+  town shows an outstanding tax balance -- either is a real signal the
+  property may be vacant or not a live sales conversation. This exclusion
+  is digest-only by design: `rank_candidates`'s own output and the
+  internal ops dashboard intentionally keep showing every scoreable
+  parcel, unfiltered, for debugging.
 
 A downstream deployment (like the full/paid repo) adds concrete source
 subclasses for real towns/datasets, seeds real client config, and digest
