@@ -97,21 +97,40 @@ two implementations depending on what data a parcel's source can actually
 provide -- not two separately-weighted signals. `siding_score()` reads
 `permit_data_available` (a source-level fact) and picks:
 
-- **`real_siding_age_score()`** for a parcel whose source is
-  `propertyrecordcards.com` (Killingly, Ashford, and Woodstock's
-  enrichment pass -- see `extscorer_full.sources.propertyrecordcards`),
-  which exposes a DIRECT `Siding:` field (real current material, not
-  inferred) plus REAL per-parcel permit history. This combines both real
-  facts into one age concept: the "effective redo year" is the most
-  recent exterior-relevant permit's year if one exists (real evidence
-  the siding was actually worked on, and when), falling back to
-  `year_built` only when no such permit is on file (the same "presumed
-  never redone" assumption the proxy has to make everywhere, but here
-  it's a fallback for missing evidence, not the primary inference).
+- **`real_siding_age_score()`** for any parcel with `permit_data_available`
+  true, regardless of WHICH downstream deployment set that flag (this
+  function only ever reads the flag + `exterior_wall_1`/permit fields on
+  the parcel -- it has no way to tell, and doesn't need to, which of two
+  real sources produced them):
+  - Killingly, Ashford, and Woodstock's enrichment pass (`propertyrecordcards.com`,
+    see `extscorer_full.sources.propertyrecordcards` in `property-lead-
+    scorer-full`) exposes a DIRECT `Siding:` field (real current material,
+    not inferred) AND real per-parcel permit history together, from one
+    platform.
+  - Brooklyn, Pomfret, and Thompson (PermitLink, see the separate
+    `permit-history-enrichment-full` repo/"Tool 5") get real permit
+    history ONLY -- that platform has no parcel/building data at all, so
+    `exterior_wall_1` for these towns is still VGSI's own proxy-classified
+    material, just paired with a real permit-derived redo year instead of
+    a guessed one. `siding_data_source` records which case applies per
+    row (`"eqs_direct_siding_field"` when real, absent when it's still
+    the VGSI proxy classification) -- don't assume every
+    `permit_data_available` parcel has a real material field just because
+    it has real permit dates.
+
+  Either way, the "effective redo year" is the most recent exterior-
+  relevant permit's year if one exists (real evidence the siding was
+  actually worked on, and when), falling back to `year_built` only when
+  no such permit is on file (the same "presumed never redone" assumption
+  the proxy has to make everywhere, but here it's a fallback for missing
+  evidence, not the primary inference).
 - **`siding_age_score()`** (the original proxy, unchanged in its own
-  logic) for every other parcel -- `exterior_wall_1` + `year_built` only,
-  since there's no real permit history to check against for these 5
-  towns (Canterbury, Pomfret, Thompson, Hampton, Brooklyn).
+  logic) for every other parcel -- `exterior_wall_1` + `year_built` only.
+  As of 2026-09-16 that's Canterbury and Hampton, confirmed (not merely
+  assumed) to have no digital permit source of any kind -- see
+  `permit-history-enrichment-full`'s own ARCHITECTURE.md for how that was
+  checked. This list will keep shrinking as real sources are found; don't
+  hardcode it anywhere else either.
 
 **Direction, both modes**: older/more-outdated siding scores HIGHER
 (higher lead priority); brand-new or recently-replaced siding scores
@@ -272,11 +291,15 @@ DEFAULT_SIDING_DURABLE_BASELINE_SCORE = 0.85
 # higher, same direction as this project's other signals. Deliberately a
 # SOFT modifier (not a primary driver): at pct_good=50 the modifier is
 # exactly 0 (neutral midpoint), scaling linearly to +/-half this value at
-# the 0/100 extremes. Proxy mode only -- building_percent_good isn't
-# consistently available from propertyrecordcards.com (never extracted
-# for Killingly/Ashford; only present for Woodstock via its earlier VGSI
-# scrape), so real mode deliberately doesn't use it, to avoid a modifier
-# that's live for some real-mode parcels and silently absent for others.
+# the 0/100 extremes. Proxy mode only -- building_percent_good is a VGSI
+# field, never extracted by propertyrecordcards.com at all (so Killingly/
+# Ashford, PRC-only towns, never have it) -- every OTHER real-mode town
+# (Woodstock, Brooklyn, Thompson; Pomfret's own VGSI scrape happens not to
+# have populated it, unexplained, not investigated as part of a docs-only
+# pass) is VGSI-sourced and so COULD have it. Real mode deliberately
+# doesn't use it regardless, to avoid a modifier that's live for some
+# real-mode parcels and silently absent for others depending on which of
+# two totally different platforms/repos set `permit_data_available`.
 DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH = 0.15
 
 # Real-mode siding signal (`real_siding_age_score`) -- see module
@@ -695,11 +718,19 @@ def real_siding_age_score(
 
 def siding_score(parcel: dict[str, Any], as_of_year: int | None = None) -> float | None:
     """The one unified siding signal `score_property` actually uses --
-    dispatches to `real_siding_age_score` for a parcel with real permit
-    visibility (`permit_data_available` true: Killingly, Ashford,
-    Woodstock's enrichment pass) and to the `siding_age_score` proxy for
-    everyone else (Canterbury, Pomfret, Thompson, Hampton, Brooklyn). See
-    module docstring's "Siding signal" section.
+    dispatches purely on each parcel's own `permit_data_available` flag,
+    never on a hardcoded town list (that list has already changed once --
+    Brooklyn/Pomfret/Thompson moved from the proxy to real permit data via
+    a separate `permit-history-enrichment-full` deployment after this
+    function was first written, with zero change needed here, which is
+    the entire point of dispatching on the flag instead of on `town`).
+    Real permit visibility currently comes from two different downstream
+    sources depending on the parcel's town -- a `property-lead-scorer-full`
+    enrichment pass (Killingly, Ashford, Woodstock) or the separate
+    `permit-history-enrichment-full` repo (Brooklyn, Pomfret, Thompson) --
+    this function has no way to tell which, and doesn't need to. Everyone
+    else falls to the `siding_age_score` proxy. See module docstring's
+    "Siding signal" section.
 
     Both branches use each other's own default tunables (not exposed as
     pass-through parameters here) -- same minimal-surface convention

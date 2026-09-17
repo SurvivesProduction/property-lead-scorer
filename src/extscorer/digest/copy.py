@@ -67,18 +67,27 @@ def _describe_siding(parcel: dict[str, Any], as_of_year: int) -> str | None:
     material" case), so a property with no siding data simply gets no
     siding clause rather than a fabricated one.
 
-    Three real cases, in order of how much this module actually knows:
-    a permit-tracked property (Killingly/Ashford/Woodstock) with a real
-    exterior-relevant permit on file names the material AND says when it
-    was last worked on -- the most informative case, and the only one
-    that can happen for a property that STILL made a top-lead list (a
-    very recent permit would score low enough to not be here at all, so
-    a permit clause on a real lead means real, but non-recent, work).
-    A permit-tracked property with NO exterior permit on file says the
-    material and that town records show no exterior work ever done --
-    real confirmation, not a guess. Everywhere else (the 5 towns without
-    real permit tracking), the material is named as the proxy's own basis
-    without claiming permit visibility that doesn't exist for that town.
+    Three real cases, in order of how much this module actually knows --
+    keyed off `permit_data_available` (the same parcel-level flag
+    `real_siding_age_score` dispatches on), never a hardcoded town list.
+    That flag currently gets set by two different real sources depending
+    on the parcel's town (`property-lead-scorer-full`'s own
+    `propertyrecordcards.com` enrichment for Killingly/Ashford/Woodstock,
+    or the separate `permit-history-enrichment-full` repo/"Tool 5" for
+    Brooklyn/Pomfret/Thompson via PermitLink) -- this function can't tell
+    which, and doesn't need to, since both write the same fields:
+    a permit-tracked property with a real exterior-relevant permit on
+    file names the material AND says when it was last worked on -- the
+    most informative case, and the only one that can happen for a
+    property that STILL made a top-lead list (a very recent permit would
+    score low enough to not be here at all, so a permit clause on a real
+    lead means real, but non-recent, work). A permit-tracked property with
+    NO exterior permit on file says the material and that town records
+    show no exterior work ever done -- real confirmation, not a guess.
+    Everywhere else (Canterbury and Hampton, as of 2026-09-16 -- confirmed
+    to have no digital permit source at all, not merely untracked), the
+    material is named as the proxy's own basis without claiming permit
+    visibility that doesn't exist for that town.
     """
     exterior_wall_1 = parcel.get("exterior_wall_1")
     if not exterior_wall_1:

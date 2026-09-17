@@ -52,15 +52,20 @@ identifiers, or hosting-provider-specific wiring (e.g. Supabase). Those
 live in a paid/full deployment layer that installs this package as a
 dependency and adds the client-specific pieces on top.
 
-## Why no real source yet
+## Why no real source here
 
-No real VGSI town card, NOAA storm CSV, or tree-canopy raster fetcher has
-been built yet -- per the same data-source-refinement workflow used for
-the other tools in this family, a source doesn't get built against a real
-target until it's been manually inspected and confirmed to actually work
-the way it's assumed to. `scripts/run_demo.py` demonstrates the full
-framework -- including the registry mechanism and both source shapes --
-against small hardcoded synthetic sources instead.
+No real VGSI town card, NOAA storm CSV, or tree-canopy raster fetcher
+lives in THIS package, by permanent design -- same as every other tool in
+this family, real scraping targets and client-specific wiring live in the
+paid `-full` deployment layer
+([property-lead-scorer-full](../property-lead-scorer-full)), never here.
+This isn't a "not built yet" gap: real VGSI/propertyrecordcards.com/NOAA/
+canopy sources for 8 real towns exist and are live-confirmed in that
+other repo (see its own ARCHITECTURE.md) -- they were never going to land
+in this one. `scripts/run_demo.py` demonstrates the full framework --
+including the registry mechanism and both source shapes -- against small
+hardcoded synthetic sources instead, and stays that way permanently, not
+as a placeholder for a future real fetcher.
 
 ## Install
 
