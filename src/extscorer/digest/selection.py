@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from extscorer.lead_pipeline import lead_key
+
 DEFAULT_LEADS_PER_DIGEST = 20
 """Widened from 10 (2026-09-15, Prompt U, explicit client request) now
 that likely-vacant/absentee-owned properties are filtered out of the
@@ -69,6 +71,42 @@ def select_unsent_leads(
     selected = []
     for lead, parcel in ranked_leads_with_parcels:
         if parcel["id"] in already_sent_parcel_row_ids:
+            continue
+        if is_likely_unreachable_owner(parcel):
+            continue
+        selected.append((lead, parcel))
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def select_new_leads_for_pipeline(
+    ranked_leads_with_parcels: list[tuple[Any, dict[str, Any]]],
+    existing_pipeline_lead_keys: set[str],
+    limit: int = DEFAULT_LEADS_PER_DIGEST,
+) -> list[tuple[Any, dict[str, Any]]]:
+    """Prompt V's replacement for `select_unsent_leads`'s dedup source.
+
+    Same ranked-pairs shape and same `is_likely_unreachable_owner`
+    exclusion as `select_unsent_leads`, but the dedup check is now "is
+    this lead's `lead_key` already in `lead_pipeline`" (regardless of
+    that row's `status` -- a lead marked `dead` or `won` is still a lead
+    that's been surfaced, and must never come back as new) rather than
+    "is this parcel's row id already in `lead_digest_sends`". The shared
+    Google Sheet's Master tab mirrors `lead_pipeline` 1:1 (see
+    `extscorer_full`'s sheets sync module), so this is equivalently "skip
+    every lead already on Master or in lead_pipeline" per the prompt's own
+    phrasing -- `lead_pipeline` is checked directly here since the Sheet
+    itself was already pulled into it earlier in the same digest cycle.
+
+    `lead_digest_sends` is untouched by this function -- it keeps meaning
+    "was in a sent email" (see that table's own migration docstring),
+    recorded only after a real, non-review send, independent of this
+    pipeline-based selection.
+    """
+    selected = []
+    for lead, parcel in ranked_leads_with_parcels:
+        if lead_key(parcel["town"], parcel["parcel_id"]) in existing_pipeline_lead_keys:
             continue
         if is_likely_unreachable_owner(parcel):
             continue

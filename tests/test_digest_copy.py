@@ -6,7 +6,14 @@ from __future__ import annotations
 
 from datetime import date
 
-from extscorer.digest.copy import describe_lead, describe_lead_parts, render_digest_html, render_digest_text
+from extscorer.digest.copy import (
+    describe_lead,
+    describe_lead_parts,
+    render_digest_html,
+    render_digest_text,
+    render_empty_digest_html,
+    render_empty_digest_text,
+)
 
 _AS_OF_YEAR = 2026
 
@@ -125,7 +132,7 @@ def test_render_digest_text_lists_every_lead_with_address_and_town() -> None:
     text = render_digest_text(leads, _AS_OF_YEAR)
     assert "1 Old House Rd, Canterbury" in text
     assert "2 New House Rd, Pomfret" in text
-    assert "2 Exterior Renovation Lead" in text
+    assert "2 New Exterior Renovation Lead" in text
 
 
 def test_render_digest_html_contains_every_lead_and_no_raw_score_fields() -> None:
@@ -143,6 +150,41 @@ def test_render_digest_html_escapes_address_content() -> None:
     leads = [(object(), {"address": "1 <script>alert(1)</script> Rd", "town": "Canterbury"})]
     html = render_digest_html(leads, _AS_OF_YEAR)
     assert "<script>" not in html
+
+
+def test_render_digest_text_includes_sheet_link_when_given() -> None:
+    leads = [(object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900})]
+    text = render_digest_text(leads, _AS_OF_YEAR, sheet_url="https://docs.google.com/spreadsheets/d/abc123")
+    assert "https://docs.google.com/spreadsheets/d/abc123" in text
+
+
+def test_render_digest_text_omits_sheet_link_when_not_given() -> None:
+    leads = [(object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900})]
+    text = render_digest_text(leads, _AS_OF_YEAR)
+    assert "docs.google.com" not in text
+
+
+def test_render_digest_html_includes_sheet_link_when_given() -> None:
+    leads = [(object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900})]
+    html = render_digest_html(leads, _AS_OF_YEAR, sheet_url="https://docs.google.com/spreadsheets/d/abc123")
+    assert "https://docs.google.com/spreadsheets/d/abc123" in html
+
+
+def test_render_empty_digest_text_mentions_zero_new_leads_and_sheet_link() -> None:
+    text = render_empty_digest_text(sheet_url="https://docs.google.com/spreadsheets/d/abc123")
+    assert "No" in text
+    assert "https://docs.google.com/spreadsheets/d/abc123" in text
+
+
+def test_render_empty_digest_text_works_without_sheet_url() -> None:
+    text = render_empty_digest_text()
+    assert text  # never empty, never crashes
+
+
+def test_render_empty_digest_html_mentions_zero_new_leads_and_sheet_link() -> None:
+    html = render_empty_digest_html(sheet_url="https://docs.google.com/spreadsheets/d/abc123")
+    assert "No New" in html
+    assert "https://docs.google.com/spreadsheets/d/abc123" in html
 
 
 def test_describe_lead_parts_splits_storm_out_of_main_sentence() -> None:

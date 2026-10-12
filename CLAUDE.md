@@ -21,3 +21,8 @@ Read `README.md` first. No ARCHITECTURE.md of its own — the sibling
 - No known Desktop deploy-only clone for this tool (unlike Tools 1-3) —
   verify before assuming one exists.
 - Only commit/push when explicitly asked.
+- **`extscorer.lead_pipeline.lead_key`** (`"{town}:{parcel_id}"`) and
+  **`extscorer.digest.selection.select_new_leads_for_pipeline`** (2026-10-12)
+  back the full repo's shared Google Sheet working pipeline — the digest's
+  dedup source is now `lead_pipeline` (migration `008_add_lead_pipeline.sql`),
+  not `lead_digest_sends`. See the full repo's ARCHITECTURE.md section 20.

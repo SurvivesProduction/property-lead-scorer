@@ -95,9 +95,10 @@ python scripts/migrate.py
 ```
 
 This applies every SQL file under `src/extscorer/migrations/`
-(`001_init_schema.sql`, which creates `parcels` and `storm_events`) in
-order. Every migration is written with `if not exists` guards, so it's
-safe to rerun.
+(`001_init_schema.sql`, which creates `parcels` and `storm_events`, through
+`008_add_lead_pipeline.sql`, which adds the shared-Sheet working pipeline
+table -- see below) in order. Every migration is written with `if not
+exists` guards, so it's safe to rerun.
 
 ## Run the demo
 
@@ -162,6 +163,21 @@ methods and its `@register_source(...)` registration should look like.
   is digest-only by design: `rank_candidates`'s own output and the
   internal ops dashboard intentionally keep showing every scoreable
   parcel, unfiltered, for debugging.
+- **`extscorer.lead_pipeline.lead_key`** / **`select_new_leads_for_pipeline`**
+  (added for the shared Google Sheet working pipeline, see the full repo's
+  `extscorer_full.sheets` package) -- `lead_key(town, parcel_id)` is the
+  stable `"{town}:{parcel_id}"` string identifying a lead across the
+  digest, the `lead_pipeline` table (`migrations/008_add_lead_pipeline.sql`),
+  and the Sheet's own Master tab; safe because `parcels`' own
+  `unique (client_id, town, parcel_id)` constraint already guarantees
+  `(town, parcel_id)` is unique per client. `select_new_leads_for_pipeline`
+  is `select_unsent_leads`'s sibling: same ranked-pairs shape and owner-
+  exclusion, but its dedup check is "already in `lead_pipeline`" (any
+  status) rather than "already in `lead_digest_sends`" -- a worked lead
+  stays visible on the Sheet forever and is never re-surfaced as new.
+  `lead_digest_sends` is unchanged in shape and still written after a real
+  push, but now means only "was pushed to the Sheet," not "was the digest's
+  dedup source."
 
 A downstream deployment (like the full/paid repo) adds concrete source
 subclasses for real towns/datasets, seeds real client config, and digest

@@ -561,3 +561,101 @@ def record_lead_digest_sends(conn: psycopg.Connection, client_id: str, parcel_id
             [{"client_id": client_id, "parcel_id": parcel_id} for parcel_id in parcel_ids],
         )
     conn.commit()
+
+
+def lead_pipeline_keys_for_client(conn: psycopg.Connection, client_id: str) -> set[str]:
+    """Return every `lead_key` on file in `lead_pipeline` for `client_id`,
+    regardless of `status` -- the dedup filter `extscorer.digest.selection
+    .select_new_leads_for_pipeline` checks (a lead marked `dead` or `won`
+    must never come back as new, same as one marked `new` itself).
+    """
+    with conn.cursor() as cur:
+        cur.execute("select lead_key from lead_pipeline where client_id = %(client_id)s", {"client_id": client_id})
+        return {row[0] for row in cur.fetchall()}
+
+
+def lead_pipeline_rows_for_client(conn: psycopg.Connection, client_id: str) -> list[dict[str, Any]]:
+    """Return every `lead_pipeline` row for `client_id` as a dict, keyed by
+    column name -- used by the sheets sync module's pull step (to compare
+    against the Sheet's current Master tab) and by verification/reporting
+    code that wants the full row, not just the key set above.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute("select * from lead_pipeline where client_id = %(client_id)s", {"client_id": client_id})
+        return cur.fetchall()
+
+
+def insert_lead_pipeline_entries(conn: psycopg.Connection, client_id: str, entries: list[dict[str, Any]]) -> None:
+    """Insert new `lead_pipeline` rows -- one per newly-surfaced lead this
+    digest cycle just pushed onto the Sheet's Master tab. Each entry is
+    `{"lead_key": ..., "parcel_id": ...}`; `status` always starts `new`,
+    `owner`/`notes` always start blank, matching the blank row the Sheet
+    append writes for the same lead (see `extscorer_full`'s sheets sync
+    module) -- this table and the Sheet must agree on a brand-new lead's
+    starting state.
+
+    Call this ONLY after the Sheet append itself has succeeded (same
+    "don't record what wasn't actually delivered" discipline
+    `record_lead_digest_sends` already follows) -- an entry recorded here
+    with no matching Sheet row would make that lead silently
+    un-re-surfaceable forever, with no way for a human to ever see or work
+    it.
+    """
+    if not entries:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into lead_pipeline (client_id, lead_key, parcel_id, status, owner, notes) "
+            "values (%(client_id)s, %(lead_key)s, %(parcel_id)s, 'new', null, null) "
+            "on conflict (client_id, lead_key) do nothing",
+            [
+                {"client_id": client_id, "lead_key": entry["lead_key"], "parcel_id": entry["parcel_id"]}
+                for entry in entries
+            ],
+        )
+    conn.commit()
+
+
+def update_lead_pipeline_from_sheet_rows(conn: psycopg.Connection, client_id: str, rows: list[dict[str, Any]]) -> None:
+    """Mirror the Sheet's Master tab's human-owned fields (`status`,
+    `owner`, `notes`) into `lead_pipeline` -- the sync cycle's "pull" step
+    (see Prompt V Step 2.1: "the Sheet is the source of truth for the
+    human-owned fields"). Each row is `{"lead_key": ..., "status": ...,
+    "owner": ..., "notes": ...}`.
+
+    Only updates a row that already exists for `(client_id, lead_key)` --
+    this function never inserts (a Master row with no matching
+    `lead_pipeline` row is not expected once Step 4's seeding has run, and
+    silently inserting one here would bypass the real `parcel_id` foreign
+    key this table requires, which the Sheet alone can't supply).
+    `last_updated` is stamped `now()` on every call, not conditionally --
+    harmless on a re-run where nothing actually changed (same idempotency
+    tolerance the rest of this sync cycle already has).
+    """
+    if not rows:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "update lead_pipeline set status = %(status)s, owner = %(owner)s, notes = %(notes)s, "
+            "last_updated = now() where client_id = %(client_id)s and lead_key = %(lead_key)s",
+            [
+                {
+                    "client_id": client_id,
+                    "lead_key": row["lead_key"],
+                    "status": row["status"],
+                    "owner": row.get("owner") or None,
+                    "notes": row.get("notes") or None,
+                }
+                for row in rows
+            ],
+        )
+    conn.commit()
+
+
+def lead_pipeline_row_count_for_client(conn: psycopg.Connection, client_id: str) -> int:
+    """Row count for `client_id` in `lead_pipeline` -- used to verify the
+    Sheet's Master tab row count matches the DB 1:1 (Prompt V Step 6).
+    """
+    with conn.cursor() as cur:
+        cur.execute("select count(*) from lead_pipeline where client_id = %(client_id)s", {"client_id": client_id})
+        return cur.fetchone()[0]

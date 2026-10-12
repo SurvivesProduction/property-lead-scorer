@@ -184,16 +184,32 @@ def describe_lead_parts(parcel: dict[str, Any], as_of_year: int) -> tuple[str, s
     return main_sentence, storm_sentence
 
 
-def render_digest_text(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_of_year: int) -> str:
-    """Plain-text digest body -- the email's `text` fallback."""
+def render_digest_text(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_of_year: int, sheet_url: str | None = None) -> str:
+    """Plain-text digest body -- the email's `text` fallback.
+
+    **Changed for Prompt V**: this is now a short "here's what's new"
+    notice rather than the one-time full list it used to be -- the shared
+    Google Sheet (linked via `sheet_url`, when given) is the actual
+    working pipeline now; the email's own list of leads is identical to
+    that run's snapshot tab, never a re-derived or re-filtered view of it.
+    `sheet_url` is optional (defaults to no link line) so existing offline
+    callers/tests that don't have a real Sheet URL handy still work.
+    """
     lines = [
-        f"North East Corner Construction -- {len(leads_with_parcels)} Exterior Renovation Lead(s)",
-        "",
-        "These are homes in the Quiet Corner that look like good candidates for a siding or roofing",
-        "conversation, based on how old the property is, its current siding, the tree cover around it,",
-        "and recent storm activity in the area.",
+        f"North East Corner Construction -- {len(leads_with_parcels)} New Exterior Renovation Lead(s)",
         "",
     ]
+    if sheet_url:
+        lines.append(f"Full working pipeline (see status, owner, notes for every lead): {sheet_url}")
+        lines.append("")
+    lines.extend(
+        [
+            "These are homes in the Quiet Corner that look like good candidates for a siding or roofing",
+            "conversation, based on how old the property is, its current siding, the tree cover around it,",
+            "and recent storm activity in the area.",
+            "",
+        ]
+    )
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         lines.append(f"{i}. {parcel.get('address', 'Unknown address')}, {parcel.get('town', '')}")
         lines.append(f"   {describe_lead(parcel, as_of_year)}")
@@ -201,6 +217,21 @@ def render_digest_text(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_
         if source_url:
             lines.append(f"   Verify this property: {source_url}")
         lines.append("")
+    return "\n".join(lines)
+
+
+def render_empty_digest_text(sheet_url: str | None = None) -> str:
+    """Plain-text body for a cycle with zero new leads (Prompt V) -- a
+    short note, not an empty list, still pointing at the Sheet so the
+    reader always has one link to check the live pipeline from.
+    """
+    lines = [
+        "North East Corner Construction -- No New Exterior Renovation Leads",
+        "",
+        "No new leads qualified for the working pipeline since the last check-in.",
+    ]
+    if sheet_url:
+        lines.append(f"Full working pipeline (see status, owner, notes for every lead): {sheet_url}")
     return "\n".join(lines)
 
 
@@ -218,11 +249,24 @@ def _esc(value: Any) -> str:
     return html_lib.escape(str(value)) if value is not None else ""
 
 
-def render_digest_html(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_of_year: int) -> str:
+def render_digest_html(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_of_year: int, sheet_url: str | None = None) -> str:
     """A single self-contained HTML email -- inline styles only, no
     external assets, same rendering-reliability discipline as Tool 1's
     own `render_digest_html`.
+
+    **Changed for Prompt V**: a short "here's what's new" notice, not the
+    one-time full list this used to be -- see `render_digest_text`'s
+    docstring for the same reasoning. `sheet_url`, when given, renders as
+    a banner link at the top of the email.
     """
+    sheet_banner = ""
+    if sheet_url:
+        sheet_banner = (
+            f'<div style="padding:14px 32px;background-color:{_COLOR_ACCENT};">'
+            f'<a href="{_esc(sheet_url)}" style="color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;">'
+            f"Open the full working pipeline &rarr;</a></div>"
+        )
+
     rows = []
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         address = _esc(parcel.get("address", "Unknown address"))
@@ -268,8 +312,9 @@ def render_digest_html(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_
 <tr><td style="padding:0;">
 <div style="background-color:{_COLOR_INK};padding:28px 32px;">
   <div style="color:#ffffff;font-size:20px;font-weight:700;">North East Corner Construction</div>
-  <div style="color:#c7cad1;font-size:14px;margin-top:4px;">Exterior Renovation Lead Report &middot; {len(leads_with_parcels)} propert{'y' if len(leads_with_parcels) == 1 else 'ies'}</div>
+  <div style="color:#c7cad1;font-size:14px;margin-top:4px;">New Exterior Renovation Lead(s) &middot; {len(leads_with_parcels)} propert{'y' if len(leads_with_parcels) == 1 else 'ies'}</div>
 </div>
+{sheet_banner}
 <div style="padding:20px 32px 4px;font-size:13px;color:{_COLOR_MUTED};line-height:1.6;">
   These are homes in the Quiet Corner that look like good candidates for a siding or roofing
   conversation, based on how old the property is, its current siding, the tree cover around it,
@@ -287,3 +332,31 @@ def render_digest_html(leads_with_parcels: list[tuple[Any, dict[str, Any]]], as_
 </table>
 </div>"""
     return body
+
+
+def render_empty_digest_html(sheet_url: str | None = None) -> str:
+    """HTML body for a cycle with zero new leads (Prompt V) -- see
+    `render_empty_digest_text`'s docstring for the same reasoning.
+    """
+    sheet_banner = ""
+    if sheet_url:
+        sheet_banner = (
+            f'<div style="padding:14px 32px;background-color:{_COLOR_ACCENT};">'
+            f'<a href="{_esc(sheet_url)}" style="color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;">'
+            f"Open the full working pipeline &rarr;</a></div>"
+        )
+    return f"""\
+<div style="background-color:#f3f4f6;padding:24px 12px;font-family:{_FONT_STACK};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background-color:#ffffff;border-radius:8px;overflow:hidden;border:1px solid {_COLOR_BORDER};">
+<tr><td style="padding:0;">
+<div style="background-color:{_COLOR_INK};padding:28px 32px;">
+  <div style="color:#ffffff;font-size:20px;font-weight:700;">North East Corner Construction</div>
+  <div style="color:#c7cad1;font-size:14px;margin-top:4px;">No New Exterior Renovation Leads</div>
+</div>
+{sheet_banner}
+<div style="padding:20px 32px 24px;font-size:13px;color:{_COLOR_INK};line-height:1.6;">
+  No new leads qualified for the working pipeline since the last check-in.
+</div>
+</td></tr>
+</table>
+</div>"""

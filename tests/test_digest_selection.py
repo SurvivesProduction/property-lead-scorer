@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from extscorer.digest.selection import DEFAULT_LEADS_PER_DIGEST, is_likely_unreachable_owner, select_unsent_leads
+from extscorer.digest.selection import (
+    DEFAULT_LEADS_PER_DIGEST,
+    is_likely_unreachable_owner,
+    select_new_leads_for_pipeline,
+    select_unsent_leads,
+)
 
 
 class _FakeLead:
@@ -80,3 +85,54 @@ def test_select_unsent_leads_excluded_owner_does_not_count_against_limit() -> No
     ]
     selected = select_unsent_leads(pairs, already_sent_parcel_row_ids=set(), limit=1)
     assert [p["id"] for _, p in selected] == ["row-b"]
+
+
+# --- select_new_leads_for_pipeline (Prompt V: lead_pipeline replaces lead_digest_sends as the dedup source) ---
+
+
+def _pipeline_parcel(parcel_id: str, town: str = "Canterbury", **extra: object) -> dict[str, object]:
+    return {"id": f"row-{parcel_id}", "town": town, "parcel_id": parcel_id, **extra}
+
+
+def test_select_new_leads_for_pipeline_selects_top_n_in_ranked_order() -> None:
+    pairs = [
+        (_FakeLead("A"), _pipeline_parcel("A")),
+        (_FakeLead("B"), _pipeline_parcel("B")),
+        (_FakeLead("C"), _pipeline_parcel("C")),
+    ]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=2)
+    assert [p["id"] for _, p in selected] == ["row-A", "row-B"]
+
+
+def test_select_new_leads_for_pipeline_skips_any_lead_key_already_in_pipeline() -> None:
+    pairs = [
+        (_FakeLead("A"), _pipeline_parcel("A")),
+        (_FakeLead("B"), _pipeline_parcel("B")),
+    ]
+    # "Canterbury:A" already in lead_pipeline -- skipped regardless of what
+    # status it might carry there (this function never reads status).
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys={"Canterbury:A"}, limit=10)
+    assert [p["id"] for _, p in selected] == ["row-B"]
+
+
+def test_select_new_leads_for_pipeline_keys_are_town_scoped() -> None:
+    # A lead_key already in the pipeline for a DIFFERENT town must not
+    # suppress a same-parcel_id lead in this town.
+    pairs = [(_FakeLead("A"), _pipeline_parcel("A", town="Pomfret"))]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys={"Canterbury:A"}, limit=10)
+    assert len(selected) == 1
+
+
+def test_select_new_leads_for_pipeline_excludes_likely_unreachable_owners() -> None:
+    pairs = [
+        (_FakeLead("A"), _pipeline_parcel("A", is_absentee_owner=True)),
+        (_FakeLead("B"), _pipeline_parcel("B")),
+    ]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=10)
+    assert [p["id"] for _, p in selected] == ["row-B"]
+
+
+def test_select_new_leads_for_pipeline_returns_empty_when_everything_already_in_pipeline() -> None:
+    pairs = [(_FakeLead("A"), _pipeline_parcel("A"))]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys={"Canterbury:A"}, limit=10)
+    assert selected == []
