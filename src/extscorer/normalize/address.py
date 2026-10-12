@@ -3,10 +3,10 @@ Prompt U's vacancy/occupancy signal).
 
 Both real sources this tool builds against expose an owner-of-record
 mailing address on the parcel's own card (VGSI: `#MainContent_lblGenOwner`
-/`#MainContent_lblAddr1`, confirmed live e.g. Canterbury pid 1329,
-"SMITH JOHN & JANE" / "20 MAPLE DR<br>CANTERBURY, CT 06331";
-propertyrecordcards.com: the "Owner's Information" table's single cell,
-confirmed live e.g. Killingly's 32 OAK ST condo, "DOE MARY<br>32 OAK ST<br>KILLINGLY, CT 06239<br>") -- same shape on
+/`#MainContent_lblAddr1`, e.g. "SMITH JOHN & JANE" / "20 MAPLE
+DR<br>ANYTOWN, CT 06331"; propertyrecordcards.com: the "Owner's
+Information" table's single cell, e.g. "DOE MARY<br>32 OAK ST<br>
+OTHERTOWN, CT 06239<br>") -- same shape on
 both platforms (name, then a `<br>`-joined mailing address), so the
 comparison logic lives here once rather than being duplicated per source
 module, matching this package's existing "generic engine, thin per-
