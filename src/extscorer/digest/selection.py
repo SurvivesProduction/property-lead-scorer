@@ -67,7 +67,15 @@ def select_unsent_leads(
     own shape (that dataclass carries the town-scoped `parcel_id` string,
     not the row's real primary key, and isn't touched by this digest
     work -- scoring changes are out of scope here).
+
+    `limit <= 0` returns `[]` immediately -- without this guard the loop
+    below still appends exactly one lead before its own `break` check
+    fires, since the check runs after the append (2026-10-13, found while
+    building Tool 4's backlog-cap feature, which legitimately calls this
+    with `limit=0` whenever the open-"new" backlog is already full).
     """
+    if limit <= 0:
+        return []
     selected = []
     for lead, parcel in ranked_leads_with_parcels:
         if parcel["id"] in already_sent_parcel_row_ids:
@@ -103,7 +111,12 @@ def select_new_leads_for_pipeline(
     "was in a sent email" (see that table's own migration docstring),
     recorded only after a real, non-review send, independent of this
     pipeline-based selection.
+
+    `limit <= 0` returns `[]` immediately -- same guard and reason as
+    `select_unsent_leads` above.
     """
+    if limit <= 0:
+        return []
     selected = []
     for lead, parcel in ranked_leads_with_parcels:
         if lead_key(parcel["town"], parcel["parcel_id"]) in existing_pipeline_lead_keys:

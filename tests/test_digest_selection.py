@@ -87,6 +87,15 @@ def test_select_unsent_leads_excluded_owner_does_not_count_against_limit() -> No
     assert [p["id"] for _, p in selected] == ["row-b"]
 
 
+def test_select_unsent_leads_returns_empty_for_zero_limit() -> None:
+    # A naive "append then check len >= limit" loop still appends one
+    # lead before its break check fires on limit=0 -- must short-circuit
+    # before the loop instead.
+    pairs = [(_FakeLead("A"), {"id": "row-a"})]
+    selected = select_unsent_leads(pairs, already_sent_parcel_row_ids=set(), limit=0)
+    assert selected == []
+
+
 # --- select_new_leads_for_pipeline (Prompt V: lead_pipeline replaces lead_digest_sends as the dedup source) ---
 
 
@@ -135,4 +144,12 @@ def test_select_new_leads_for_pipeline_excludes_likely_unreachable_owners() -> N
 def test_select_new_leads_for_pipeline_returns_empty_when_everything_already_in_pipeline() -> None:
     pairs = [(_FakeLead("A"), _pipeline_parcel("A"))]
     selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys={"Canterbury:A"}, limit=10)
+    assert selected == []
+
+
+def test_select_new_leads_for_pipeline_returns_empty_for_zero_limit() -> None:
+    # The backlog-cap feature (Tool 4) legitimately calls this with
+    # limit=0 whenever the open-"new" backlog is already full.
+    pairs = [(_FakeLead("A"), _pipeline_parcel("A"))]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=0)
     assert selected == []
