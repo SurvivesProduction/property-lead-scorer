@@ -59,10 +59,12 @@ lives in THIS package, by permanent design -- same as every other tool in
 this family, real scraping targets and client-specific wiring live in the
 paid `-full` deployment layer
 ([property-lead-scorer-full](../property-lead-scorer-full)), never here.
-This isn't a "not built yet" gap: real VGSI/propertyrecordcards.com/NOAA/
-canopy sources for 8 real towns exist and are live-confirmed in that
-other repo (see its own ARCHITECTURE.md) -- they were never going to land
-in this one. `scripts/run_demo.py` demonstrates the full framework --
+This isn't a "not built yet" gap: real VGSI/propertyrecordcards.com/
+CT-statewide-CAMA/NOAA/canopy sources for 9 real towns (added Windham,
+2026-10-26, via the state Parcel+CAMA dataset -- AxisGIS is Windham's own
+GIS system and stays off-limits to automation, see that repo's own
+ARCHITECTURE.md section 21) exist and are live-confirmed in that other
+repo -- they were never going to land in this one. `scripts/run_demo.py` demonstrates the full framework --
 including the registry mechanism and both source shapes -- against small
 hardcoded synthetic sources instead, and stays that way permanently, not
 as a placeholder for a future real fetcher.
