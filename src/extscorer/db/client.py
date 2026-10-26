@@ -62,6 +62,7 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "exterior_permit_count": record.exterior_permit_count,
         "most_recent_exterior_permit_date": record.most_recent_exterior_permit_date,
         "most_recent_exterior_permit_type": record.most_recent_exterior_permit_type,
+        "permit_history_since": record.permit_history_since,
         "lead_score": record.lead_score,
         "score_property_component": record.score_property_component,
         "score_canopy_component": record.score_canopy_component,
@@ -69,6 +70,13 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "score_siding_component": record.score_siding_component,
         "has_tax_delinquency": record.has_tax_delinquency,
         "tax_outstanding_balance": record.tax_outstanding_balance,
+        "effective_year_built": record.effective_year_built,
+        "cama_permit_count": record.cama_permit_count,
+        "outbuilding_count": record.outbuilding_count,
+        "last_sale_date": record.last_sale_date,
+        "last_sale_price": record.last_sale_price,
+        "source_dataset_id": record.source_dataset_id,
+        "source_fetch_date": record.source_fetch_date,
         "raw_data": Jsonb(record.raw_data),
         "needs_review": record.needs_review,
         "review_reason": record.review_reason,
@@ -133,10 +141,13 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             pct_tree_canopy_nearby, canopy_data_year, canopy_source,
             nearest_storm_event_date, storm_event_summary,
             permit_data_available, permit_history, exterior_permit_count,
-            most_recent_exterior_permit_date, most_recent_exterior_permit_type,
+            most_recent_exterior_permit_date, most_recent_exterior_permit_type, permit_history_since,
             lead_score, score_property_component, score_canopy_component, score_storm_component,
             score_siding_component,
             has_tax_delinquency, tax_outstanding_balance,
+            effective_year_built, cama_permit_count, outbuilding_count,
+            last_sale_date, last_sale_price,
+            source_dataset_id, source_fetch_date,
             raw_data, needs_review, review_reason
         ) values (
             %(client_id)s, %(town)s, %(parcel_id)s, %(county)s, %(address)s, %(source_url)s,
@@ -147,10 +158,13 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             %(pct_tree_canopy_nearby)s, %(canopy_data_year)s, %(canopy_source)s,
             %(nearest_storm_event_date)s, %(storm_event_summary)s,
             %(permit_data_available)s, %(permit_history)s, %(exterior_permit_count)s,
-            %(most_recent_exterior_permit_date)s, %(most_recent_exterior_permit_type)s,
+            %(most_recent_exterior_permit_date)s, %(most_recent_exterior_permit_type)s, %(permit_history_since)s,
             %(lead_score)s, %(score_property_component)s, %(score_canopy_component)s, %(score_storm_component)s,
             %(score_siding_component)s,
             %(has_tax_delinquency)s, %(tax_outstanding_balance)s,
+            %(effective_year_built)s, %(cama_permit_count)s, %(outbuilding_count)s,
+            %(last_sale_date)s, %(last_sale_price)s,
+            %(source_dataset_id)s, %(source_fetch_date)s,
             %(raw_data)s, %(needs_review)s, %(review_reason)s
         )
         on conflict (client_id, town, parcel_id) do update set
@@ -184,6 +198,7 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             exterior_permit_count = coalesce(excluded.exterior_permit_count, parcels.exterior_permit_count),
             most_recent_exterior_permit_date = coalesce(excluded.most_recent_exterior_permit_date, parcels.most_recent_exterior_permit_date),
             most_recent_exterior_permit_type = coalesce(excluded.most_recent_exterior_permit_type, parcels.most_recent_exterior_permit_type),
+            permit_history_since = coalesce(excluded.permit_history_since, parcels.permit_history_since),
             lead_score = coalesce(excluded.lead_score, parcels.lead_score),
             score_property_component = coalesce(excluded.score_property_component, parcels.score_property_component),
             score_canopy_component = coalesce(excluded.score_canopy_component, parcels.score_canopy_component),
@@ -197,6 +212,18 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             -- ordinary re-scrape (which never sets this field at all).
             has_tax_delinquency = (excluded.has_tax_delinquency or parcels.has_tax_delinquency),
             tax_outstanding_balance = coalesce(excluded.tax_outstanding_balance, parcels.tax_outstanding_balance),
+            -- CAMA fields are scrape-native from the one state-dataset
+            -- source Windham's town rows ever come from -- blind
+            -- overwrite, same as year_built/living_area_sqft, not
+            -- coalesce (a real re-fetch should replace a stale eyb, not
+            -- preserve it).
+            effective_year_built = excluded.effective_year_built,
+            cama_permit_count = excluded.cama_permit_count,
+            outbuilding_count = excluded.outbuilding_count,
+            last_sale_date = excluded.last_sale_date,
+            last_sale_price = excluded.last_sale_price,
+            source_dataset_id = excluded.source_dataset_id,
+            source_fetch_date = excluded.source_fetch_date,
             raw_data = excluded.raw_data,
             needs_review = excluded.needs_review,
             review_reason = excluded.review_reason,
@@ -302,6 +329,7 @@ def update_parcel_permit_and_siding_fields(
     exterior_permit_count: int | None,
     most_recent_exterior_permit_date: date | None,
     most_recent_exterior_permit_type: str | None,
+    permit_history_since: date | None = None,
 ) -> dict[str, Any]:
     """Backfill one parcel row's real-siding/permit-history fields by its
     own primary key (`id`) -- every other column is left untouched.
@@ -318,6 +346,15 @@ def update_parcel_permit_and_siding_fields(
     refresh convention as `update_parcel_storm_fields`/
     `update_parcel_canopy_fields`: always writes the current computed
     value, safe to rerun.
+
+    `permit_history_since` (2026-10-26, Windham build) -- also used by
+    `permit-history-enrichment-full`'s Windham PermitLink backfill (via
+    `permit_enrichment.db`'s re-export of this same function): the
+    earliest date this parcel's town's permit source can actually attest
+    to, so `extscorer.scoring.basic.real_siding_age_score` never reads a
+    short/new history's "no permit found" as "never redone." Defaults to
+    `None` (unchanged behavior) for every existing caller that doesn't
+    pass it.
     """
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(
@@ -330,6 +367,7 @@ def update_parcel_permit_and_siding_fields(
                 exterior_permit_count = %(exterior_permit_count)s,
                 most_recent_exterior_permit_date = %(most_recent_exterior_permit_date)s,
                 most_recent_exterior_permit_type = %(most_recent_exterior_permit_type)s,
+                permit_history_since = coalesce(%(permit_history_since)s, permit_history_since),
                 updated_at = now()
             where id = %(id)s
             returning *
@@ -343,6 +381,7 @@ def update_parcel_permit_and_siding_fields(
                 "exterior_permit_count": exterior_permit_count,
                 "most_recent_exterior_permit_date": most_recent_exterior_permit_date,
                 "most_recent_exterior_permit_type": most_recent_exterior_permit_type,
+                "permit_history_since": permit_history_since,
             },
         )
         row = cur.fetchone()

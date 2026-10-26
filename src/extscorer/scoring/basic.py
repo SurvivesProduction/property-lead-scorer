@@ -680,6 +680,22 @@ def real_siding_age_score(
     redone" fallback the proxy has to assume everywhere, used here only
     when there's no better evidence, not as the primary inference).
 
+    **Short permit history guard (2026-10-26, Windham build)**: the
+    "otherwise `year_built`" fallback above is only safe when the permit
+    source's own history is long/established enough that "nothing on
+    file" plausibly means "never redone" over the parcel's whole
+    lifetime. `parcel["permit_history_since"]` makes that assumption
+    explicit per parcel: `None` (every pre-Windham permit-visible town)
+    keeps the fallback above unchanged. A real date (Windham's PermitLink
+    portal only covers 2026-04-15 forward) means the opposite -- "no
+    permit found" there is NOT evidence of anything, since literally
+    every parcel in that town would show the same absence regardless of
+    its real roof age. In that case this function falls back to
+    `siding_age_score`'s material+age-only proxy instead of fabricating a
+    decades-old redo year -- the same honest "we don't have enough real
+    evidence, estimate from material+age" answer a town with zero permit
+    visibility already gets, not a new third behavior.
+
     **Material-sensitive decay**: `1 - exp(-(years_since_redone) /
     decay_years)`, the same exponential-saturation shape
     `property_age_score` uses, with `decay_years` chosen by material
@@ -706,7 +722,16 @@ def real_siding_age_score(
         decay_years = other_decay_years
 
     most_recent_exterior_permit_date = parcel.get("most_recent_exterior_permit_date")
-    effective_redo_year = most_recent_exterior_permit_date.year if most_recent_exterior_permit_date is not None else year_built
+    if most_recent_exterior_permit_date is not None:
+        effective_redo_year = most_recent_exterior_permit_date.year
+    elif parcel.get("permit_history_since") is not None:
+        # No permit on file, but this town's permit source can't attest
+        # to anything before permit_history_since -- too short a window
+        # to trust the absence as "never redone." Fall back to the
+        # material+age-only proxy rather than year_built.
+        return siding_age_score(parcel)
+    else:
+        effective_redo_year = year_built
 
     years_since_redone = _current_year(as_of_year) - effective_redo_year
     if years_since_redone <= 0:

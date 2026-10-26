@@ -606,6 +606,45 @@ def test_real_siding_age_score_falls_back_to_year_built_when_no_permit_on_file()
     assert new_house < 0.5
 
 
+def test_real_siding_age_score_short_permit_history_falls_back_to_proxy_not_year_built() -> None:
+    # Windham build (2026-10-26): permit_history_since set means this
+    # town's permit source can't attest to anything before that date --
+    # an old house showing "no permit on file" must NOT be read as
+    # "never redone since year_built" (that would fabricate a strong
+    # positive signal from a mere 7-month-old data source). It should
+    # fall back to the same material+age proxy a zero-permit-visibility
+    # town gets, NOT the real-mode year_built fallback.
+    parcel = {
+        "permit_data_available": True,
+        "exterior_wall_1": "Clapboards",
+        "year_built": 1900,
+        "permit_history_since": date(2026, 4, 15),
+    }
+    real_mode_result = real_siding_age_score(parcel, as_of_year=_AS_OF_YEAR)
+    proxy_result = siding_age_score(parcel)
+    assert real_mode_result == proxy_result
+    # Confirm it's genuinely NOT the year_built fallback this old a house
+    # would otherwise get (that fallback saturates near 1.0 for 1900).
+    no_guard_parcel = dict(parcel, permit_history_since=None)
+    unguarded_result = real_siding_age_score(no_guard_parcel, as_of_year=_AS_OF_YEAR)
+    assert unguarded_result > 0.9
+    assert real_mode_result != unguarded_result
+
+
+def test_real_siding_age_score_short_permit_history_still_uses_a_real_confirmed_permit() -> None:
+    # permit_history_since does NOT suppress a genuine, dated, recent
+    # permit -- only the "nothing on file" fallback. A confirmed
+    # just-issued roof permit should still zero out the score.
+    parcel = {
+        "permit_data_available": True,
+        "exterior_wall_1": "Clapboards",
+        "year_built": 1900,
+        "permit_history_since": date(2026, 4, 15),
+        "most_recent_exterior_permit_date": date(_AS_OF_YEAR, 6, 1),
+    }
+    assert real_siding_age_score(parcel, as_of_year=_AS_OF_YEAR) == 0.0
+
+
 def test_real_siding_age_score_vinyl_saturates_faster_than_durable_material() -> None:
     # Same effective redo year (no permit, fall back to year_built), same
     # years-since-redone -- vinyl's shorter real-world lifespan means it

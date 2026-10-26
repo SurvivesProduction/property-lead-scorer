@@ -79,6 +79,14 @@ class ParcelLeadRecord(BaseModel):
     same underlying concept (current exterior material) as VGSI's field;
     `siding_data_source` records which real source populated it.
 
+    `permit_history_since` added 2026-10-26 (Windham build) -- `None`
+    means this town's real permit source has an established/unbounded
+    history (every pre-Windham permit-visible town); a real date means
+    the source only attests to permits from that date forward, so "no
+    permit on file" must NOT be read as "never redone" -- see
+    `extscorer.scoring.basic.real_siding_age_score`'s fallback-to-proxy
+    handling and migration `009_add_cama_fields.sql`'s own docstring.
+
     `owner_name`/`owner_mailing_address`/`is_absentee_owner` added
     2026-09-15 (Prompt U) -- both VGSI and propertyrecordcards.com expose
     a real owner-of-record mailing address (VGSI: `#MainContent_
@@ -90,6 +98,33 @@ class ParcelLeadRecord(BaseModel):
     for the comparison logic; kept as a first-class field here (not
     recomputed later from raw text) so a caller never has to re-parse
     `owner_mailing_address` to answer "is this likely an absentee owner."
+
+    `effective_year_built`/`cama_permit_count`/`outbuilding_count`/
+    `source_dataset_id`/`source_fetch_date` added 2026-10-26 for the CT
+    statewide Parcel+CAMA dataset (data.ct.gov `rny9-6ak2`) -- a
+    state-level bulk-dataset source (Windham being the first town built
+    against it), distinct from the per-town VGSI/propertyrecordcards.com
+    page-scrape sources. `effective_year_built` is CAMA's own `eyb`
+    (correlates -0.96 with its `depreciation` field per the Windham
+    spike -- essentially `building_percent_good` restated as a year, not
+    an independent renovation date, but kept as its own field regardless
+    -- see migration `009_add_cama_fields.sql`). `cama_permit_count` is
+    CAMA's own coarse, undated `permit_count` -- deliberately NOT the
+    same concept as `exterior_permit_count` (real, dated, exterior-
+    relevant permits from propertyrecordcards.com/PermitLink); see that
+    migration's own docstring for why conflating the two would overstate
+    confidence. `outbuilding_count` has no type/year/condition detail
+    from CAMA alone -- not consumed by any scoring signal yet.
+    `source_dataset_id`/`source_fetch_date` make a bulk-dataset source's
+    staleness visible on the row itself (CAMA is an annual valuation
+    snapshot, not a live feed) rather than only in a backfill script's
+    console output; `None` for a per-page-scrape source.
+
+    CAMA's own `depreciation`-derived "percent good" is NOT a new field
+    here -- it's the same underlying concept VGSI's card literally labels
+    "Building Percent Good," so a CAMA-sourced parcel populates the
+    EXISTING `building_percent_good` field (100 - CAMA's `depreciation`)
+    rather than a duplicate column.
 
     `has_tax_delinquency`/`tax_outstanding_balance` added the same day --
     real per-parcel data from mytaxbill.org (a shared CT municipal tax
@@ -130,6 +165,7 @@ class ParcelLeadRecord(BaseModel):
     exterior_permit_count: int | None = None
     most_recent_exterior_permit_date: date | None = None
     most_recent_exterior_permit_type: str | None = None
+    permit_history_since: date | None = None
     lead_score: float | None = None
     score_property_component: float | None = None
     score_canopy_component: float | None = None
@@ -137,6 +173,13 @@ class ParcelLeadRecord(BaseModel):
     score_siding_component: float | None = None
     has_tax_delinquency: bool = False
     tax_outstanding_balance: float | None = None
+    effective_year_built: int | None = None
+    cama_permit_count: int | None = None
+    outbuilding_count: int | None = None
+    last_sale_date: date | None = None
+    last_sale_price: float | None = None
+    source_dataset_id: str | None = None
+    source_fetch_date: date | None = None
     raw_data: dict[str, Any] = Field(default_factory=dict)
     needs_review: bool = False
     review_reason: str | None = None
