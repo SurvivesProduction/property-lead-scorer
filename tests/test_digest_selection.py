@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from extscorer.digest.selection import (
     DEFAULT_LEADS_PER_DIGEST,
+    filter_sold_territory,
     is_likely_unreachable_owner,
     select_new_leads_for_pipeline,
     select_unsent_leads,
@@ -153,3 +154,25 @@ def test_select_new_leads_for_pipeline_returns_empty_for_zero_limit() -> None:
     pairs = [(_FakeLead("A"), _pipeline_parcel("A"))]
     selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=0)
     assert selected == []
+
+
+def test_filter_sold_territory_none_is_no_restriction() -> None:
+    parcels = [{"town": "Canterbury"}, {"town": "Windham"}]
+    assert filter_sold_territory(parcels, None) == parcels
+
+
+def test_filter_sold_territory_excludes_unsold_town() -> None:
+    parcels = [{"id": "a", "town": "Canterbury"}, {"id": "b", "town": "Windham"}]
+    result = filter_sold_territory(parcels, ["Canterbury", "Pomfret"])
+    assert [p["id"] for p in result] == ["a"]
+
+
+def test_filter_sold_territory_is_case_insensitive() -> None:
+    parcels = [{"id": "a", "town": "Windham"}]
+    assert filter_sold_territory(parcels, ["windham"]) == parcels
+    assert filter_sold_territory(parcels, ["WINDHAM"]) == parcels
+
+
+def test_filter_sold_territory_empty_list_excludes_everyone() -> None:
+    parcels = [{"town": "Canterbury"}]
+    assert filter_sold_territory(parcels, []) == []

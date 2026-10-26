@@ -22,6 +22,39 @@ crew on a 3-weeks-on/3-weeks-off cycle; a real, deliberate number in real
 code, not final."""
 
 
+def filter_sold_territory(
+    parcels: list[dict[str, Any]], sold_towns: list[str] | None
+) -> list[dict[str, Any]]:
+    """Restrict `parcels` to rows whose `town` is in `sold_towns` -- the
+    gate that keeps an unsold/not-yet-contracted town's data (added to the
+    DB for scoring/export/dashboard purposes, e.g. a spike or a new-town
+    build in progress) out of a client's digest/Sheet pipeline specifically.
+
+    `sold_towns=None` means "no restriction" (every existing client's
+    default, same as `load_scoring_overrides`'s "config doesn't set it ->
+    no override" convention) -- a client with no `sold_towns:` key in its
+    config.yaml sees no behavior change at all. Comparison is
+    case-insensitive on the stored `town` string (`parcel["town"]`), since
+    that's a source module's own hardcoded display-case constant (e.g.
+    `CanterburyVgsiSource.town = "Canterbury"`), not a normalized key.
+
+    This is deliberately NOT applied inside `rank_candidates`/
+    `score_property` itself, and NOT applied in `scripts/
+    generate_lead_dashboard.py` or `scripts/backfill_lead_scores.py` --
+    an unsold town's parcels still get scored and still show up in the
+    internal, Noah-facing dashboard/export (useful for exactly the kind
+    of "is this town worth building" evaluation a new-town build/spike is
+    for). The gate is applied at exactly one choke point:
+    `extscorer_full.sheets.sync.run_sync_cycle`'s own parcel fetch, which
+    is what both the Sheet push and the digest email derive their
+    candidate list from.
+    """
+    if sold_towns is None:
+        return parcels
+    allowed = {town.strip().lower() for town in sold_towns}
+    return [parcel for parcel in parcels if (parcel.get("town") or "").strip().lower() in allowed]
+
+
 def is_likely_unreachable_owner(parcel: dict[str, Any]) -> bool:
     """True if this parcel should be excluded from the digest as a likely
     vacant or absentee-owned property -- a real property records show is
