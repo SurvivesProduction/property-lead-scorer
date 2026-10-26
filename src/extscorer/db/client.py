@@ -273,6 +273,57 @@ def update_parcel_coordinates(
     return row
 
 
+def update_parcel_coordinates_and_review(
+    conn: psycopg.Connection,
+    parcel_id: Any,
+    latitude: float | None,
+    longitude: float | None,
+    needs_review: bool,
+    review_reason: str | None,
+) -> dict[str, Any]:
+    """Backfill one parcel row's geocoded `latitude`/`longitude` AND its
+    `needs_review`/`review_reason` together, by its own primary key
+    (`id`) -- every other column left untouched.
+
+    Separate from the plain `update_parcel_coordinates` above (used by
+    `backfill_parcel_geocoding.py`'s Census-geocoder pass, which doesn't
+    flag `needs_review` at all) -- built for a centroid-join pass (e.g.
+    Windham's state parcel+CAMA feature-service join,
+    `scripts/backfill_windham_centroids.py`) that DOES need to flag "no
+    centroid found" / "shares a polygon with another parcel" the same way
+    `update_parcel_canopy_fields` flags its own gaps. Caller is expected
+    to have already merged this pass's own contribution into
+    `review_reason` via `extscorer_full.review_reasons.merge_owned_reason`
+    (same "don't clobber a different pass's reason, don't leave a stale
+    one behind" discipline) -- this function just writes the final value,
+    same "dumb write" convention as `update_parcel_canopy_fields`.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            update parcels
+            set latitude = %(latitude)s,
+                longitude = %(longitude)s,
+                needs_review = %(needs_review)s,
+                review_reason = %(review_reason)s,
+                updated_at = now()
+            where id = %(id)s
+            returning *
+            """,
+            {
+                "id": parcel_id,
+                "latitude": latitude,
+                "longitude": longitude,
+                "needs_review": needs_review,
+                "review_reason": review_reason,
+            },
+        )
+        row = cur.fetchone()
+    conn.commit()
+    assert row is not None
+    return row
+
+
 def update_parcel_lead_score(
     conn: psycopg.Connection,
     parcel_id: Any,
