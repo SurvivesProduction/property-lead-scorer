@@ -126,6 +126,23 @@ class ParcelLeadRecord(BaseModel):
     EXISTING `building_percent_good` field (100 - CAMA's `depreciation`)
     rather than a duplicate column.
 
+    `assessed_value`/`state_parcel_ref`/`enrichment_status` added
+    2026-10-28 for the state CAMA FeatureServer merge (docs/state-
+    featureserver-audit-2026-10-28.md, property-lead-scorer-full).
+    `assessed_value` (the state's `Assessed_Total`) is state-only by
+    construction -- no scraped source has ever exposed an assessed
+    value, so there's no preference order to pick between, unlike
+    `year_built`/`living_area_sqft` etc. `state_parcel_ref` keeps the
+    state layer's 4 distinct id-ish fields (`Parcel_ID`/`CAMA_Link`/
+    `Link`/`link_1`) together for a human to read later -- deliberately
+    NEVER used as a join key (the audit found literal link-ID matching
+    produces only town-specific coincidental collisions); `None` for
+    every scraped record, which has no such fields. `enrichment_status`
+    defaults to `'scraped'` since every existing `LeadDataSource` only
+    ever produces scraped rows; only the state-merge script's own
+    state-only-row construction sets it to `'state_only'`, which gates
+    digest/Sheet selection until a real scrape confirms the row.
+
     `has_tax_delinquency`/`tax_outstanding_balance` added the same day --
     real per-parcel data from mytaxbill.org (a shared CT municipal tax
     portal covering all 8 target towns, confirmed live, no login needed),
@@ -183,6 +200,9 @@ class ParcelLeadRecord(BaseModel):
     raw_data: dict[str, Any] = Field(default_factory=dict)
     needs_review: bool = False
     review_reason: str | None = None
+    assessed_value: float | None = None
+    state_parcel_ref: dict[str, Any] | None = None
+    enrichment_status: str = "scraped"
 
 
 class StormEventRecord(BaseModel):

@@ -80,6 +80,9 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
         "raw_data": Jsonb(record.raw_data),
         "needs_review": record.needs_review,
         "review_reason": record.review_reason,
+        "assessed_value": record.assessed_value,
+        "state_parcel_ref": Jsonb(record.state_parcel_ref) if record.state_parcel_ref is not None else None,
+        "enrichment_status": record.enrichment_status,
     }
 
 
@@ -148,7 +151,8 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             effective_year_built, cama_permit_count, outbuilding_count,
             last_sale_date, last_sale_price,
             source_dataset_id, source_fetch_date,
-            raw_data, needs_review, review_reason
+            raw_data, needs_review, review_reason,
+            assessed_value, state_parcel_ref, enrichment_status
         ) values (
             %(client_id)s, %(town)s, %(parcel_id)s, %(county)s, %(address)s, %(source_url)s,
             %(year_built)s, %(living_area_sqft)s, %(roof_cover_material)s,
@@ -165,7 +169,8 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             %(effective_year_built)s, %(cama_permit_count)s, %(outbuilding_count)s,
             %(last_sale_date)s, %(last_sale_price)s,
             %(source_dataset_id)s, %(source_fetch_date)s,
-            %(raw_data)s, %(needs_review)s, %(review_reason)s
+            %(raw_data)s, %(needs_review)s, %(review_reason)s,
+            %(assessed_value)s, %(state_parcel_ref)s, %(enrichment_status)s
         )
         on conflict (client_id, town, parcel_id) do update set
             county = excluded.county,
@@ -227,6 +232,21 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
             raw_data = excluded.raw_data,
             needs_review = excluded.needs_review,
             review_reason = excluded.review_reason,
+            -- assessed_value/state_parcel_ref are state-layer-only
+            -- (2026-10-28) -- no scraped source ever provides them, so
+            -- same coalesce-protect treatment as tax_outstanding_balance
+            -- above: never clobbered by an ordinary VGSI/propertyrecordcards.com
+            -- re-scrape. enrichment_status blind-overwrites like
+            -- effective_year_built -- in practice this is moot for a
+            -- state-only row's minted `parcel_id` (see
+            -- `extscorer.normalize.address.mint_address_town_parcel_id`),
+            -- which can never collide with a real scraper's own id, so
+            -- this conflict branch never actually fires for a state-only
+            -- row today; kept consistent with every other scrape-native
+            -- field's treatment regardless.
+            assessed_value = coalesce(excluded.assessed_value, parcels.assessed_value),
+            state_parcel_ref = coalesce(excluded.state_parcel_ref, parcels.state_parcel_ref),
+            enrichment_status = excluded.enrichment_status,
             last_seen_at = now(),
             updated_at = now()
         returning *
@@ -473,6 +493,64 @@ def update_parcel_tax_delinquency_fields(
                 "id": parcel_id,
                 "has_tax_delinquency": has_tax_delinquency,
                 "tax_outstanding_balance": tax_outstanding_balance,
+            },
+        )
+        row = cur.fetchone()
+    conn.commit()
+    assert row is not None
+    return row
+
+
+def fill_state_enrichment_fields_if_null(
+    conn: psycopg.Connection,
+    parcel_id: Any,
+    latitude: float | None,
+    longitude: float | None,
+    assessed_value: float | None,
+    last_sale_date: date | None,
+    last_sale_price: float | None,
+    state_parcel_ref: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Backfill an EXISTING (already-scraped) parcel row from the state
+    CAMA layer, by its own primary key (`id`) -- 2026-10-28, the state
+    FeatureServer merge (docs/state-featureserver-audit-2026-10-28.md,
+    property-lead-scorer-full).
+
+    Deliberately NARROWER than `upsert_parcel`'s own ON CONFLICT clause:
+    this function ONLY ever touches the 5 columns above, and the SQL
+    itself (`coalesce(parcels.X, %(x)s)`, existing value first) guarantees
+    it only ever fills a currently-NULL value -- it can never overwrite a
+    real existing value, even if called with a non-NULL argument. This is
+    the audit's own "existing rows: fill ONLY where our value is NULL"
+    rule enforced at the SQL level, not just by caller discipline, since
+    `upsert_parcel` blind-overwrites `address`/`year_built`/
+    `living_area_sqft`/`owner_name`/etc on conflict -- exactly the columns
+    this merge must NEVER touch on an existing row. `address`/`town`/
+    `parcel_id` are not parameters here at all, not just left alone by
+    convention -- they can't be passed to this function.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            update parcels
+            set latitude = coalesce(parcels.latitude, %(latitude)s),
+                longitude = coalesce(parcels.longitude, %(longitude)s),
+                assessed_value = coalesce(parcels.assessed_value, %(assessed_value)s),
+                last_sale_date = coalesce(parcels.last_sale_date, %(last_sale_date)s),
+                last_sale_price = coalesce(parcels.last_sale_price, %(last_sale_price)s),
+                state_parcel_ref = coalesce(parcels.state_parcel_ref, %(state_parcel_ref)s),
+                updated_at = now()
+            where id = %(id)s
+            returning *
+            """,
+            {
+                "id": parcel_id,
+                "latitude": latitude,
+                "longitude": longitude,
+                "assessed_value": assessed_value,
+                "last_sale_date": last_sale_date,
+                "last_sale_price": last_sale_price,
+                "state_parcel_ref": Jsonb(state_parcel_ref) if state_parcel_ref is not None else None,
             },
         )
         row = cur.fetchone()

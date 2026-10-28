@@ -24,6 +24,7 @@ into the schema than a plain boolean.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 
 _STREET_TYPE_ABBREVIATIONS = {
@@ -120,3 +121,36 @@ def is_owner_address_mismatch(property_address: str | None, owner_mailing_street
     if normalized_property is None or normalized_owner is None:
         return False
     return normalized_property != normalized_owner
+
+
+def mint_address_town_parcel_id(town: str, address: str) -> str:
+    """Deterministic fallback `parcel_id` for a row that has no native
+    scraper id (e.g. a state-layer-only parcel, which has no VGSI `pid` or
+    propertyrecordcards.com `uniqueid` of its own) -- 2026-10-28, the state
+    CAMA FeatureServer merge.
+
+    No address+town hash minting scheme existed anywhere in this codebase
+    before this (checked: `lead_pipeline.lead_key` builds `"{town}:
+    {parcel_id}"` from an ALREADY-EXISTING `parcel_id`, it doesn't mint
+    one). `parcels`' own `unique (client_id, town, parcel_id)` constraint
+    still needs *some* value, and it needs to be the SAME value every time
+    this function is called for the same real parcel (an idempotent merge
+    script re-run must not insert a second row for a row it already
+    inserted) -- a `sha256` of the normalized street address is
+    deterministic and collision-resistant enough for this project's real
+    scale (tens of thousands of parcels, not millions). Hashes the
+    NORMALIZED address (`normalize_street_address`), not the raw string, so
+    "20 Maple Dr" and "20 MAPLE DRIVE" mint the same id. Town is included
+    in the hash input (not just relied on as a separate DB column) so two
+    different towns' same-named street can never collide on `parcel_id`
+    alone, matching how VGSI/propertyrecordcards.com ids are already only
+    unique within a town, never globally.
+
+    Prefixed `state-` so a human glancing at a `parcel_id` column can tell
+    at a glance this is a minted id, not a real platform id (VGSI's are
+    bare small integers, propertyrecordcards.com's are `uniqueid` strings
+    like `"G0156900"` -- neither looks like a hex hash).
+    """
+    normalized = normalize_street_address(address) or ""
+    digest = hashlib.sha256(f"{town.strip().upper()}|{normalized}".encode("utf-8")).hexdigest()
+    return f"state-{digest[:16]}"
