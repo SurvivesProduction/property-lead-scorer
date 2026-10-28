@@ -78,6 +78,29 @@ def is_likely_unreachable_owner(parcel: dict[str, Any]) -> bool:
     return bool(parcel.get("is_absentee_owner")) or bool(parcel.get("has_tax_delinquency"))
 
 
+def is_unverified_state_only(parcel: dict[str, Any]) -> bool:
+    """True if this parcel has never been independently scraped -- it only
+    exists because the state CAMA layer's full-town coverage added it
+    (2026-10-28, see property-lead-scorer-full's docs/state-featureserver-
+    audit-2026-10-28.md). Excluded from the digest/Sheet pipeline entirely,
+    same treatment as `is_likely_unreachable_owner`: it still scores and
+    still shows on the internal dashboard (useful for picking a Phase 2
+    enrichment candidate list), it just never reaches Darren until a real
+    VGSI/propertyrecordcards.com scrape (plus permits/mytaxbill) confirms
+    it -- no stable per-parcel card URL, no real siding/roof data, no
+    permit visibility to back up a `state_only` row's score yet.
+
+    Defaults to `False` (not excluded) for any parcel predating this
+    column -- `enrichment_status` itself defaults to `'scraped'` at the
+    schema level (migration `010_add_state_enrichment_fields.sql`), so
+    this only ever actually triggers for a genuine state-only row, never
+    as a side effect of an older row simply not having the column
+    computed yet (unlike `is_absentee_owner`/`has_tax_delinquency`, there
+    is no "unknown" state here to worry about conflating with "excluded").
+    """
+    return parcel.get("enrichment_status") == "state_only"
+
+
 def select_unsent_leads(
     ranked_leads_with_parcels: list[tuple[Any, dict[str, Any]]],
     already_sent_parcel_row_ids: set[Any],
@@ -114,6 +137,8 @@ def select_unsent_leads(
         if parcel["id"] in already_sent_parcel_row_ids:
             continue
         if is_likely_unreachable_owner(parcel):
+            continue
+        if is_unverified_state_only(parcel):
             continue
         selected.append((lead, parcel))
         if len(selected) >= limit:
@@ -155,6 +180,8 @@ def select_new_leads_for_pipeline(
         if lead_key(parcel["town"], parcel["parcel_id"]) in existing_pipeline_lead_keys:
             continue
         if is_likely_unreachable_owner(parcel):
+            continue
+        if is_unverified_state_only(parcel):
             continue
         selected.append((lead, parcel))
         if len(selected) >= limit:

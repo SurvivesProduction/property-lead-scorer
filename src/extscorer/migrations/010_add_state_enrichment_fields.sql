@@ -3,9 +3,14 @@
 -- `parcels` (docs/state-featureserver-audit-2026-10-28.md in the -full
 -- repo is the audit this migration implements).
 --
--- `last_sale_date`/`last_sale_price` are NOT added here -- they already
--- exist (009_add_cama_fields.sql, built for Windham's CAMA ingestion).
--- This migration only adds what's genuinely new.
+-- `last_sale_date`/`last_sale_price` ALREADY EXIST (009_add_cama_fields.sql,
+-- built for Windham's CAMA ingestion) -- re-added here too, explicitly
+-- requested on review, via the same `add column if not exists` guard
+-- every other statement in this file already uses, so running this on a
+-- DB that already has them (every real environment today) is a genuine
+-- no-op, not a silent redefinition. Kept so this migration is a complete,
+-- self-contained list of every column the merge script touches, without
+-- requiring a reader to cross-reference 009 to know both exist.
 --
 -- `assessed_value` -- a field NONE of the 8 scraper towns' sources
 -- (VGSI, propertyrecordcards.com) have ever exposed; the audit confirmed
@@ -39,6 +44,12 @@
 
 alter table parcels
     add column if not exists assessed_value numeric;
+
+alter table parcels
+    add column if not exists last_sale_date date;
+
+alter table parcels
+    add column if not exists last_sale_price numeric;
 
 alter table parcels
     add column if not exists state_parcel_ref jsonb;

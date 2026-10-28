@@ -4,6 +4,7 @@ from extscorer.digest.selection import (
     DEFAULT_LEADS_PER_DIGEST,
     filter_sold_territory,
     is_likely_unreachable_owner,
+    is_unverified_state_only,
     select_new_leads_for_pipeline,
     select_unsent_leads,
 )
@@ -88,6 +89,28 @@ def test_select_unsent_leads_excluded_owner_does_not_count_against_limit() -> No
     assert [p["id"] for _, p in selected] == ["row-b"]
 
 
+def test_is_unverified_state_only_true_for_state_only_enrichment_status() -> None:
+    assert is_unverified_state_only({"enrichment_status": "state_only"}) is True
+
+
+def test_is_unverified_state_only_false_for_scraped_or_missing() -> None:
+    # 'scraped' is the real value every existing/scraper row carries; `{}`
+    # covers a row from before this column existed at all -- neither is
+    # excluded, same "unknown must not be treated as confirmed" discipline
+    # is_likely_unreachable_owner already documents for its own signals.
+    assert is_unverified_state_only({"enrichment_status": "scraped"}) is False
+    assert is_unverified_state_only({}) is False
+
+
+def test_select_unsent_leads_excludes_state_only_rows() -> None:
+    pairs = [
+        (_FakeLead("A"), {"id": "row-a", "enrichment_status": "state_only"}),
+        (_FakeLead("B"), {"id": "row-b", "enrichment_status": "scraped"}),
+    ]
+    selected = select_unsent_leads(pairs, already_sent_parcel_row_ids=set(), limit=10)
+    assert [p["id"] for _, p in selected] == ["row-b"]
+
+
 def test_select_unsent_leads_returns_empty_for_zero_limit() -> None:
     # A naive "append then check len >= limit" loop still appends one
     # lead before its break check fires on limit=0 -- must short-circuit
@@ -137,6 +160,15 @@ def test_select_new_leads_for_pipeline_excludes_likely_unreachable_owners() -> N
     pairs = [
         (_FakeLead("A"), _pipeline_parcel("A", is_absentee_owner=True)),
         (_FakeLead("B"), _pipeline_parcel("B")),
+    ]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=10)
+    assert [p["id"] for _, p in selected] == ["row-B"]
+
+
+def test_select_new_leads_for_pipeline_excludes_state_only_rows() -> None:
+    pairs = [
+        (_FakeLead("A"), _pipeline_parcel("A", enrichment_status="state_only")),
+        (_FakeLead("B"), _pipeline_parcel("B", enrichment_status="scraped")),
     ]
     selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=10)
     assert [p["id"] for _, p in selected] == ["row-B"]
