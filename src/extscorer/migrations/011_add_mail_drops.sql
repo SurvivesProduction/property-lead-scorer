@@ -27,6 +27,17 @@
 -- correction, a re-scrape) -- this table is a record of what was
 -- mailed, not a live view of the parcel.
 --
+-- `on delete restrict` on the `parcels` FK -- deliberately the OPPOSITE
+-- direction from `lead_pipeline.parcel_id`'s own `on delete cascade`.
+-- A record of what was actually mailed must block a parcel delete, not
+-- silently vanish with it -- there's no real scenario in this project
+-- where a `parcels` row gets deleted at all (every existing write path
+-- is an upsert/update, never a delete), so this is a safety rail against
+-- a future mistake, not a workflow this migration expects to hit. The
+-- `mail_drops` FK (on `drop_id`) stays `on delete cascade` -- that's an
+-- ordinary parent-owns-children relationship, not a "preserve history
+-- past the thing it describes" one.
+--
 -- Safe to rerun: every statement uses an `if not exists` guard.
 
 create table if not exists mail_drops (
@@ -57,7 +68,7 @@ create index if not exists idx_mail_drops_client on mail_drops (client_id);
 create table if not exists mail_drop_parcels (
     id uuid primary key default gen_random_uuid(),
     drop_id uuid not null references mail_drops(id) on delete cascade,
-    parcel_id uuid not null references parcels(id) on delete cascade,
+    parcel_id uuid not null references parcels(id) on delete restrict,
     address_snapshot text not null,
     recipient_line text not null,
     created_at timestamptz not null default now(),
