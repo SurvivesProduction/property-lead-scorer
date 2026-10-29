@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiet Corner Lead Board</title>
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --panel: #ffffff;
+    --border: #e5e7eb;
+    --ink: #1a1a2e;
+    --muted: #6b7280;
+    --accent: #2f7d4f;
+    --accent-ink: #ffffff;
+    --chip-bg: #eef2ff;
+    --chip-active-bg: #2f7d4f;
+    --chip-active-ink: #ffffff;
+    --up: #16a34a;
+    --down: #dc2626;
+    --badge-bg: #fef3c7;
+    --badge-ink: #92400e;
+    --bar-track: #e5e7eb;
+    --bar-fill: #2f7d4f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111827;
+      --panel: #1f2937;
+      --border: #374151;
+      --ink: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #4ade80;
+      --accent-ink: #052e16;
+      --chip-bg: #374151;
+      --chip-active-bg: #4ade80;
+      --chip-active-ink: #052e16;
+      --up: #4ade80;
+      --down: #f87171;
+      --badge-bg: #4b3621;
+      --badge-ink: #fde68a;
+      --bar-track: #374151;
+      --bar-fill: #4ade80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111827;
+    --panel: #1f2937;
+    --border: #374151;
+    --ink: #f3f4f6;
+    --muted: #9ca3af;
+    --accent: #4ade80;
+    --accent-ink: #052e16;
+    --chip-bg: #374151;
+    --chip-active-bg: #4ade80;
+    --chip-active-ink: #052e16;
+    --up: #4ade80;
+    --down: #f87171;
+    --badge-bg: #4b3621;
+    --badge-ink: #fde68a;
+    --bar-track: #374151;
+    --bar-fill: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  #app-root { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  #weight-sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .control label { font-size: 13px; display: block; margin-bottom: 4px; }
+  .control input[type=range] { width: 100%; }
+  .note { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  #preset-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .preset-btn, .chip, .expand-btn, #copy-settings, #theme-toggle {
+    border: 1px solid var(--border); background: var(--chip-bg); color: var(--ink);
+    border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  .preset-btn-active, .chip-active { background: var(--chip-active-bg); color: var(--chip-active-ink); border-color: var(--chip-active-bg); }
+  #town-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 10px; }
+  .filters-grid label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .filters-grid input[type=number] { width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--ink); }
+  .toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 10px; font-size: 13px; }
+  .toggles label { display: flex; align-items: center; gap: 6px; }
+  #result-count { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  #results-list { list-style: none; margin: 0; padding: 0; }
+  .lead-row { border-bottom: 1px solid var(--border); padding: 10px 0; }
+  .lead-row-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lead-rank { font-weight: 700; min-width: 36px; }
+  .rank-up { color: var(--up); font-size: 12px; }
+  .rank-down { color: var(--down); font-size: 12px; }
+  .rank-same { color: var(--muted); font-size: 12px; }
+  .lead-town { font-weight: 600; }
+  .lead-built { color: var(--muted); font-size: 12px; }
+  .badge { font-size: 11px; background: var(--badge-bg); color: var(--badge-ink); padding: 2px 8px; border-radius: 999px; }
+  .lead-row-detail { margin-top: 8px; padding-left: 8px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+  .bar-label { width: 90px; color: var(--muted); text-transform: capitalize; }
+  .bar-track { flex: 1; height: 8px; background: var(--bar-track); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--bar-fill); }
+  .verify-link { font-size: 12px; color: var(--accent); display: inline-block; margin-top: 4px; }
+  #copy-status { font-size: 12px; color: var(--accent); margin-left: 8px; }
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  @media (max-width: 480px) {
+    #app-root { padding: 10px; }
+    .lead-row-main { gap: 6px; }
+  }
+</style>
+</head>
+<body>
+<div id="app-root">
+  <header>
+    <div>
+      <h1>Quiet Corner Lead Board</h1>
+      <div class="subtitle">North East Corner Construction &middot; drag a slider, flip a filter &mdash; the ranking re-sorts live, right here in the browser.</div>
+    </div>
+    <button type="button" id="theme-toggle">Toggle theme</button>
+  </header>
+
+  <div class="panel">
+    <h2>Weights</h2>
+    <div id="weight-sliders"></div>
+    <h2 style="margin-top:16px;">Presets</h2>
+    <div id="preset-buttons"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Towns</h2>
+    <div id="town-chips"></div>
+    <h2 style="margin-top:16px;">Filters</h2>
+    <div class="filters-grid">
+      <div><label for="year-min">Year built, min</label><input type="number" id="year-min" placeholder="any"></div>
+      <div><label for="year-max">Year built, max</label><input type="number" id="year-max" placeholder="any"></div>
+      <div><label for="canopy-min">Canopy %, min</label><input type="number" id="canopy-min" placeholder="any"></div>
+      <div><label for="canopy-max">Canopy %, max</label><input type="number" id="canopy-max" placeholder="any"></div>
+      <div><label for="jobsize-min">Job size pct, min</label><input type="number" id="jobsize-min" placeholder="any"></div>
+      <div><label for="jobsize-max">Job size pct, max</label><input type="number" id="jobsize-max" placeholder="any"></div>
+    </div>
+    <label style="display:block;margin-top:10px;font-size:13px;">
+      <input type="checkbox" id="toggle-permit-history"> Has real permit history
+    </label>
+
+    <h2 style="margin-top:16px;">Toggles</h2>
+    <div class="toggles">
+      <label><input type="checkbox" id="toggle-claimed"> Hide claimed territory</label>
+      <label><input type="checkbox" id="toggle-worked"> Hide worked leads</label>
+      <label><input type="checkbox" id="toggle-mailed"> Hide already mailed/shown</label>
+      <label><input type="checkbox" id="toggle-unreachable"> Hide unreachable (absentee/delinquent)</label>
+      <label><input type="checkbox" id="toggle-state-only"> Show state-data-only rows</label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <label for="top-n" style="font-size:13px;">Show top</label>
+      <select id="top-n">
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <button type="button" id="copy-settings">Copy settings</button>
+      <span id="copy-status"></span>
+    </div>
+    <div id="result-count"></div>
+    <ul id="results-list"></ul>
+  </div>
+</div>
+
+<script>
+/*__LEAD_BOARD_DATA__*/
+</script>
+<script>
+/*__SCORING_JS__*/
+</script>
+<script>
+/*__FILTERS_JS__*/
+</script>
+<script>
+/*__PRESETS_JS__*/
+</script>
+<script>
+/*__STATE_JS__*/
+</script>
+<script>
+/*__APP_JS__*/
+</script>
+</body>
+</html>

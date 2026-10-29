@@ -114,6 +114,73 @@ scrape-shaped, one bulk-dataset-shaped) through the exact same
 data -- a reference for what a real source's `fetch`/`parse`/`normalize`
 methods and its `@register_source(...)` registration should look like.
 
+## Lead Board (interactive slider sales tool)
+
+`lead_board/` holds a self-contained, offline HTML page -- weight sliders
+and filters re-rank a client's scored leads LIVE in the browser, no
+backend, no login. Built for screen-sharing with a crew: which knobs they
+reach for is itself a signal for what to refine next.
+
+- **`lead_board/scoring.js`** -- re-weights each parcel's already-
+  persisted `score_*_component` columns (never recomputes the underlying
+  curves) plus two new OPTIONAL components computed client-side from
+  percentile rank -- job size (`living_area_sqft`, falling back to
+  `assessed_value`) and sale recency (`last_sale_year`) -- both default
+  weight 0, so the default ranking is byte-for-byte unchanged until a
+  viewer actually moves one.
+  - **Parity guarantee**: at the default weights and the stored as-of
+    year, this module's score matches the real, persisted `lead_score`
+    for every scoreable parcel within 1e-9, and its default ranking
+    exactly matches the database's own ordering, tiebreak included
+    (`living_area_sqft` desc, then `year_built` asc/oldest-first, then
+    `parcel_id` DESCENDING -- `rank_candidates`'s own `sorted(...,
+    reverse=True)` applies to every tuple field, parcel_id included).
+    Verified against the real population in
+    `property-lead-scorer-full/tests_js/test_parity.js` (that repo has
+    the real data; this one only has synthetic fixtures).
+- **`lead_board/filters.js`** -- town/year/canopy/job-size range filters,
+  "has real permit history" (`permit_data_available AND NOT
+  permit_history_short`), and five toggles (hide claimed territory, hide
+  worked, hide mailed/shown, hide unreachable, show state-data-only --
+  defaults ON/ON/ON/ON/OFF). Two filters this project originally
+  considered -- siding-material and roof-cover-material multi-selects --
+  were DROPPED: Step 0's real coverage report found both raw text fields
+  populated on only ~25% of scoreable parcels overall and WORSE (~4%)
+  within the three claimed towns specifically, so a multi-select built
+  on them would mostly show "no selection available." The `siding`
+  WEIGHT slider stays -- its underlying `score_siding_component` is
+  100% present (neutral 0.5 when the raw material is unknown), it's only
+  the raw-field filters that were too sparse to ship.
+- **`lead_board/presets.js`** -- "Darren default" (the real config
+  weights), "Siding-focused" (siding becomes the heaviest signal),
+  "Bigger jobs" (job size becomes meaningful while property age still
+  matters) -- see the file's own docstring for the exact numbers and why.
+- **`lead_board/state.js`** -- every slider/filter/toggle value round-
+  trips through the URL hash (base64url-encoded JSON); "Copy settings"
+  copies the same JSON to the clipboard.
+- **`lead_board/template.html`** + **`lead_board/app.js`** -- the page
+  skeleton (light/dark via `prefers-color-scheme` + a manual toggle,
+  mobile-responsive) and its DOM wiring. No raw field names or raw scores
+  in the main results list -- component bars and the raw `source_url`
+  verify-link only appear once a row is expanded.
+
+`scripts/build_demo_board.py` inlines the template + JS modules + a fully
+synthetic fixture (fake towns/streets, covering a claimed town, a
+Windham-shaped short-permit-history town, worked/unworked/mailed rows,
+state-only rows, and sparse sale dates) into `demo/lead_board_demo.html`
+-- safe to commit, safe to screen-share. The REAL-data build
+(`property-lead-scorer-full/scripts/build_lead_board.py`) lives in the
+full repo, writes to its own gitignored `output/`, and is never committed
+-- see that repo's own README/ARCHITECTURE.
+
+Node tests (no framework installed -- `tests_js/_runner.js` is a ~30-line
+dependency-free runner; this project's Node predates the built-in test
+runner added in Node 18):
+
+```bash
+node tests_js/run_all.js
+```
+
 ## How the pieces fit together
 
 - **`extscorer.sources.base.LeadDataSource`** -- subclass once per town or

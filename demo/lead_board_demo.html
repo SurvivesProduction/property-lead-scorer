@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiet Corner Lead Board</title>
+<style>
+  :root {
+    --bg: #f3f4f6;
+    --panel: #ffffff;
+    --border: #e5e7eb;
+    --ink: #1a1a2e;
+    --muted: #6b7280;
+    --accent: #2f7d4f;
+    --accent-ink: #ffffff;
+    --chip-bg: #eef2ff;
+    --chip-active-bg: #2f7d4f;
+    --chip-active-ink: #ffffff;
+    --up: #16a34a;
+    --down: #dc2626;
+    --badge-bg: #fef3c7;
+    --badge-ink: #92400e;
+    --bar-track: #e5e7eb;
+    --bar-fill: #2f7d4f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111827;
+      --panel: #1f2937;
+      --border: #374151;
+      --ink: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #4ade80;
+      --accent-ink: #052e16;
+      --chip-bg: #374151;
+      --chip-active-bg: #4ade80;
+      --chip-active-ink: #052e16;
+      --up: #4ade80;
+      --down: #f87171;
+      --badge-bg: #4b3621;
+      --badge-ink: #fde68a;
+      --bar-track: #374151;
+      --bar-fill: #4ade80;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111827;
+    --panel: #1f2937;
+    --border: #374151;
+    --ink: #f3f4f6;
+    --muted: #9ca3af;
+    --accent: #4ade80;
+    --accent-ink: #052e16;
+    --chip-bg: #374151;
+    --chip-active-bg: #4ade80;
+    --chip-active-ink: #052e16;
+    --up: #4ade80;
+    --down: #f87171;
+    --badge-bg: #4b3621;
+    --badge-ink: #fde68a;
+    --bar-track: #374151;
+    --bar-fill: #4ade80;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  }
+  #app-root { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  #weight-sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .control label { font-size: 13px; display: block; margin-bottom: 4px; }
+  .control input[type=range] { width: 100%; }
+  .note { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  #preset-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+  .preset-btn, .chip, .expand-btn, #copy-settings, #theme-toggle {
+    border: 1px solid var(--border); background: var(--chip-bg); color: var(--ink);
+    border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+  }
+  .preset-btn-active, .chip-active { background: var(--chip-active-bg); color: var(--chip-active-ink); border-color: var(--chip-active-bg); }
+  #town-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .filters-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 10px; }
+  .filters-grid label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  .filters-grid input[type=number] { width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--ink); }
+  .toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 10px; font-size: 13px; }
+  .toggles label { display: flex; align-items: center; gap: 6px; }
+  #result-count { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  #results-list { list-style: none; margin: 0; padding: 0; }
+  .lead-row { border-bottom: 1px solid var(--border); padding: 10px 0; }
+  .lead-row-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .lead-rank { font-weight: 700; min-width: 36px; }
+  .rank-up { color: var(--up); font-size: 12px; }
+  .rank-down { color: var(--down); font-size: 12px; }
+  .rank-same { color: var(--muted); font-size: 12px; }
+  .lead-town { font-weight: 600; }
+  .lead-built { color: var(--muted); font-size: 12px; }
+  .badge { font-size: 11px; background: var(--badge-bg); color: var(--badge-ink); padding: 2px 8px; border-radius: 999px; }
+  .lead-row-detail { margin-top: 8px; padding-left: 8px; }
+  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+  .bar-label { width: 90px; color: var(--muted); text-transform: capitalize; }
+  .bar-track { flex: 1; height: 8px; background: var(--bar-track); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; background: var(--bar-fill); }
+  .verify-link { font-size: 12px; color: var(--accent); display: inline-block; margin-top: 4px; }
+  #copy-status { font-size: 12px; color: var(--accent); margin-left: 8px; }
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  @media (max-width: 480px) {
+    #app-root { padding: 10px; }
+    .lead-row-main { gap: 6px; }
+  }
+</style>
+</head>
+<body>
+<div id="app-root">
+  <header>
+    <div>
+      <h1>Quiet Corner Lead Board</h1>
+      <div class="subtitle">North East Corner Construction &middot; drag a slider, flip a filter &mdash; the ranking re-sorts live, right here in the browser.</div>
+    </div>
+    <button type="button" id="theme-toggle">Toggle theme</button>
+  </header>
+
+  <div class="panel">
+    <h2>Weights</h2>
+    <div id="weight-sliders"></div>
+    <h2 style="margin-top:16px;">Presets</h2>
+    <div id="preset-buttons"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Towns</h2>
+    <div id="town-chips"></div>
+    <h2 style="margin-top:16px;">Filters</h2>
+    <div class="filters-grid">
+      <div><label for="year-min">Year built, min</label><input type="number" id="year-min" placeholder="any"></div>
+      <div><label for="year-max">Year built, max</label><input type="number" id="year-max" placeholder="any"></div>
+      <div><label for="canopy-min">Canopy %, min</label><input type="number" id="canopy-min" placeholder="any"></div>
+      <div><label for="canopy-max">Canopy %, max</label><input type="number" id="canopy-max" placeholder="any"></div>
+      <div><label for="jobsize-min">Job size pct, min</label><input type="number" id="jobsize-min" placeholder="any"></div>
+      <div><label for="jobsize-max">Job size pct, max</label><input type="number" id="jobsize-max" placeholder="any"></div>
+    </div>
+    <label style="display:block;margin-top:10px;font-size:13px;">
+      <input type="checkbox" id="toggle-permit-history"> Has real permit history
+    </label>
+
+    <h2 style="margin-top:16px;">Toggles</h2>
+    <div class="toggles">
+      <label><input type="checkbox" id="toggle-claimed"> Hide claimed territory</label>
+      <label><input type="checkbox" id="toggle-worked"> Hide worked leads</label>
+      <label><input type="checkbox" id="toggle-mailed"> Hide already mailed/shown</label>
+      <label><input type="checkbox" id="toggle-unreachable"> Hide unreachable (absentee/delinquent)</label>
+      <label><input type="checkbox" id="toggle-state-only"> Show state-data-only rows</label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <label for="top-n" style="font-size:13px;">Show top</label>
+      <select id="top-n">
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <button type="button" id="copy-settings">Copy settings</button>
+      <span id="copy-status"></span>
+    </div>
+    <div id="result-count"></div>
+    <ul id="results-list"></ul>
+  </div>
+</div>
+
+<script>
+var LEAD_BOARD_DATA = {"metadata": {"client_id": "demo", "as_of_year": 2026, "sold_towns": ["Fakington"], "export_timestamp": "2026-10-29T00:00:00+00:00", "weights": {"property_weight": 0.5, "canopy_weight": 0.15, "storm_weight": 0.05, "siding_weight": 0.3}}, "parcels": [{"parcel_id": "1", "lead_key": "Fakington:1", "town": "Fakington", "address": "1 Example Rd", "year_built": 1850, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 2400, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=1", "components": {"property": 0.95, "canopy": 0.8, "storm": 1.0, "siding": 0.9}, "lead_score": 0.915, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "2", "lead_key": "Fakington:2", "town": "Fakington", "address": "2 Example Rd", "year_built": 1920, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=2", "components": {"property": 0.7, "canopy": 0.3, "storm": 1.0, "siding": 0.6}, "lead_score": 0.625, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": true, "is_state_only": false}}, {"parcel_id": "3", "lead_key": "Fakington:3", "town": "Fakington", "address": "3 Example Rd", "year_built": 1965, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.3, "canopy": 0.5, "storm": 1.0, "siding": 0.2}, "lead_score": 0.33499999999999996, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "4", "lead_key": "Mapleford:4", "town": "Mapleford", "address": "4 Fictional Ave", "year_built": 1900, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=4", "components": {"property": 0.8, "canopy": 0.6, "storm": 1.0, "siding": 0.85}, "lead_score": 0.795, "flags": {"permit_data_available": true, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "5", "lead_key": "Mapleford:5", "town": "Mapleford", "address": "5 Fictional Ave", "year_built": 1975, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.5, "canopy": 0.4, "storm": 1.0, "siding": 0.1}, "lead_score": 0.39, "flags": {"permit_data_available": true, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": true}}, {"parcel_id": "6", "lead_key": "Smallville:6", "town": "Smallville", "address": "6 Pretend St", "year_built": 1990, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.45, "canopy": 0.5, "storm": 1.0, "siding": 0.5}, "lead_score": 0.5, "flags": {"permit_data_available": true, "permit_history_short": true, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "7", "lead_key": "Smallville:7", "town": "Smallville", "address": "7 Pretend St", "year_built": 1945, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.75, "canopy": 0.7, "storm": 1.0, "siding": 0.8}, "lead_score": 0.77, "flags": {"permit_data_available": true, "permit_history_short": true, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "8", "lead_key": "Pineville:8", "town": "Pineville", "address": "8 Imaginary Ln", "year_built": 1955, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.65, "canopy": 0.2, "storm": 1.0, "siding": 0.4}, "lead_score": 0.5249999999999999, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "estimate booked", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "9", "lead_key": "Pineville:9", "town": "Pineville", "address": "9 Imaginary Ln", "year_built": 1988, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.4, "canopy": 0.6, "storm": 1.0, "siding": 0.3}, "lead_score": 0.43000000000000005, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "not interested", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "10", "lead_key": "Pineville:10", "town": "Pineville", "address": "10 Imaginary Ln", "year_built": 1932, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.85, "canopy": 0.9, "storm": 1.0, "siding": 0.7}, "lead_score": 0.8200000000000001, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "new", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "11", "lead_key": "Pineville:11", "town": "Pineville", "address": "11 Imaginary Ln", "year_built": 1998, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.2, "canopy": 0.4, "storm": 1.0, "siding": 0.15}, "lead_score": 0.255, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "12", "lead_key": "Pineville:12", "town": "Pineville", "address": "12 Imaginary Ln", "year_built": 1890, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.9, "canopy": 0.55, "storm": 1.0, "siding": 0.6}, "lead_score": 0.7625, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": true}}, {"parcel_id": "13", "lead_key": "Pineville:13", "town": "Pineville", "address": "13 Imaginary Ln", "year_built": 1960, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.6, "canopy": 0.3, "storm": 1.0, "siding": 0.5}, "lead_score": 0.5449999999999999, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": true, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "14", "lead_key": "Pineville:14", "town": "Pineville", "address": "14 Imaginary Ln", "year_built": 1940, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.72, "canopy": 0.45, "storm": 1.0, "siding": 0.65}, "lead_score": 0.6725, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": true, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "15", "lead_key": "Pineville:15", "town": "Pineville", "address": "15 Imaginary Ln", "year_built": 1972, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 3800, "assessed_value": 410000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.5, "canopy": 0.5, "storm": 1.0, "siding": 0.5}, "lead_score": 0.525, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "16", "lead_key": "Pineville:16", "town": "Pineville", "address": "16 Imaginary Ln", "year_built": 1980, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 900, "assessed_value": 120000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.45, "canopy": 0.35, "storm": 1.0, "siding": 0.3}, "lead_score": 0.4175, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}]};
+</script>
+<script>
+/*
+ * Client-side re-ranking for the interactive slider Lead Board (Prompt W).
+ *
+ * v1 re-weights PRECOMPUTED components only -- this file never recomputes
+ * `property_age_score`/`canopy_score`/`storm_score`/`siding_score` from
+ * raw fields, it just re-runs the weighted-average combine step
+ * `extscorer.scoring.basic.score_property` itself does, against each
+ * parcel's own already-persisted `score_*_component` columns (see
+ * `property-lead-scorer-full/scripts/export_lead_board_data.py`'s
+ * `components` field). Two new OPTIONAL components (`jobSize`/
+ * `saleRecency`) are computed here, client-side, from percentile rank --
+ * see `computeJobSizeComponent`/`computeSaleRecencyComponent` below --
+ * since no such persisted column exists in the DB to reuse.
+ *
+ * Plain CommonJS (`module.exports`), no build step, no dependencies --
+ * loadable both by Node (`require`, the parity/unit tests) and by the
+ * board page itself (inlined verbatim into a <script> tag by the build
+ * scripts in both repos -- `module.exports` is simply never reached
+ * there since no `module` global exists in a browser `<script>`, which
+ * is fine, nothing in the page needs it).
+ */
+'use strict';
+
+/**
+ * The combine step `score_property` itself uses: weighted AVERAGE of every
+ * component that is present (not null/undefined), dividing by the SUM of
+ * those components' own weights -- not a plain weighted sum. Mirrors
+ * `score_property`'s exact arithmetic and operation order (one running
+ * `weightedSum`/`totalWeight` pair, components folded in a fixed order)
+ * so floating-point results match the stored `lead_score` bit-for-bit
+ * (not merely "close"), not just within the 1e-9 parity tolerance.
+ *
+ * `components`/`weights` are plain objects keyed by the same component
+ * names: `property`, `canopy`, `storm`, `siding`, `jobSize`, `saleRecency`.
+ * A component absent from `components` (or `null`/`undefined`) is skipped
+ * entirely, same as `score_property`'s `siding_component is None` check --
+ * its weight does NOT enter `totalWeight` either, so disabling a signal
+ * (e.g. the storm slider, which `score_property` never actually had this
+ * option for, but the board does) behaves identically to Python's
+ * `enable_siding_signal=False` path for siding specifically, generalized
+ * here to every component.
+ *
+ * Fixed combine order matches `score_property`'s own: property, canopy,
+ * storm, then siding, jobSize, saleRecency -- floating-point addition is
+ * not associative, so this order must stay fixed for bit-for-bit parity.
+ */
+const COMPONENT_ORDER = ['property', 'canopy', 'storm', 'siding', 'jobSize', 'saleRecency'];
+
+function computeScore(components, weights) {
+  let weightedSum = 0;
+  let totalWeight = 0;
+  for (const key of COMPONENT_ORDER) {
+    const value = components[key];
+    if (value === null || value === undefined) continue;
+    const weight = weights[key] || 0;
+    weightedSum += weight * value;
+    totalWeight += weight;
+  }
+  return totalWeight > 0 ? weightedSum / totalWeight : 0;
+}
+
+/**
+ * Percentile rank (0-1, higher = more extreme/larger) of `value` within
+ * `sortedValues` (ascending, pre-sorted by the caller once per render --
+ * O(n log n) sort amortized across every lead, not per-lead). Returns
+ * `null` for a `value` of `null`/`undefined` -- the caller (`withJobSize
+ * Component`/`withSaleRecencyComponent`) maps that to the neutral 0.5
+ * "unknown" convention every other signal in this project already uses
+ * (`canopy_score`/`siding_age_score`'s own missing-data handling),
+ * rather than fabricating a rank for data that was never on file.
+ *
+ * Rank is the fraction of values <= `value` (inclusive, via a binary
+ * search for the last occurrence) -- ties share the SAME rank (the
+ * highest rank among the tied group), not split arbitrarily.
+ */
+function percentileRank(sortedValues, value) {
+  if (value === null || value === undefined) return null;
+  if (sortedValues.length === 0) return null;
+  if (sortedValues.length === 1) return 1.0;
+
+  let lo = 0;
+  let hi = sortedValues.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sortedValues[mid] <= value) lo = mid + 1;
+    else hi = mid;
+  }
+  // lo is now the count of values <= value.
+  return lo / sortedValues.length;
+}
+
+/**
+ * Job-size proxy: percentile rank of `living_area_sqft`, falling back to
+ * `assessed_value` when sqft is unknown but assessed value is on file
+ * (both are real-world "how big a job" proxies -- sqft is more direct,
+ * assessed value the next-best signal when it's missing). Returns 0.5
+ * (neutral, never fabricated) when NEITHER is known for a parcel, same
+ * "unknown is neutral" convention `canopy_score`/`siding_age_score`
+ * already use -- see module docstring.
+ */
+function computeJobSizeComponent(parcel, sortedSqft, sortedAssessedValue) {
+  if (parcel.living_area_sqft !== null && parcel.living_area_sqft !== undefined) {
+    const rank = percentileRank(sortedSqft, parcel.living_area_sqft);
+    if (rank !== null) return rank;
+  }
+  if (parcel.assessed_value !== null && parcel.assessed_value !== undefined) {
+    const rank = percentileRank(sortedAssessedValue, parcel.assessed_value);
+    if (rank !== null) return rank;
+  }
+  return 0.5;
+}
+
+/**
+ * Sale-recency component: percentile rank of `last_sale_year` -- higher
+ * rank means a MORE RECENT sale, which this signal treats as LOWER
+ * priority (a recently-sold property is less likely to need exterior
+ * work pitched right now, and/or the new owner may still be settling
+ * in) -- so the returned score is `1 - rank`, i.e. the LEAST recently
+ * sold (or never-recorded) properties score highest. Returns 0.5
+ * (neutral) when `last_sale_year` is unknown, same convention as
+ * `computeJobSizeComponent`.
+ */
+function computeSaleRecencyComponent(parcel, sortedSaleYears) {
+  if (parcel.last_sale_year === null || parcel.last_sale_year === undefined) return 0.5;
+  const rank = percentileRank(sortedSaleYears, parcel.last_sale_year);
+  if (rank === null) return 0.5;
+  return 1 - rank;
+}
+
+/**
+ * Deterministic tiebreak comparator matching `extscorer.scoring.basic
+ * .rank_candidates`'s `sorted(..., reverse=True)` key EXACTLY, including
+ * the reversed `parcel_id` order: `(score, living_area_sqft or 0,
+ * -(year_built or 0), parcel_id)`, every field descending. Returns a
+ * negative number when `a` sorts before `b` (standard `Array.prototype
+ * .sort` comparator convention), matching `reverse=True` on every field
+ * -- NOT merely "sort ascending then reverse the array" (that would
+ * invert the stable-sort tie order Python's own `sorted(reverse=True)`
+ * preserves for genuinely-equal keys).
+ */
+function compareLeadsDesc(a, b) {
+  if (a.score !== b.score) return b.score - a.score;
+
+  const aSqft = a.living_area_sqft || 0;
+  const bSqft = b.living_area_sqft || 0;
+  if (aSqft !== bSqft) return bSqft - aSqft;
+
+  const aYear = a.year_built || 0;
+  const bYear = b.year_built || 0;
+  if (aYear !== bYear) return aYear - bYear; // oldest (smallest year_built) first
+
+  if (a.parcel_id === b.parcel_id) return 0;
+  return a.parcel_id < b.parcel_id ? 1 : -1; // descending (reverse=True) lexicographic
+}
+
+/**
+ * Score and rank every parcel at the given weights, returning a new array
+ * of `{...parcel, score, rank}` sorted by `compareLeadsDesc` -- `rank` is
+ * 1-based position in this ranking. Does NOT filter -- callers apply
+ * filters/toggles separately (see `filters.js`) before or after ranking
+ * as appropriate; this function's only job is score + deterministic
+ * order, mirroring `rank_candidates`'s own single responsibility.
+ *
+ * `jobSizeComponents`/`saleRecencyComponents` are `Map`s keyed by
+ * `lead_key`, precomputed ONCE per full parcel set by the caller (via
+ * `computeJobSizeComponent`/`computeSaleRecencyComponent` against the
+ * FULL sorted-value arrays) -- percentile rank is only meaningful
+ * relative to the whole population, so it must never be recomputed
+ * against an already-filtered subset.
+ */
+function rankLeads(parcels, weights, jobSizeComponents, saleRecencyComponents) {
+  const scored = parcels.map((parcel) => {
+    const components = {
+      property: parcel.components.property,
+      canopy: parcel.components.canopy,
+      storm: parcel.components.storm,
+      siding: parcel.components.siding,
+      jobSize: jobSizeComponents ? jobSizeComponents.get(parcel.lead_key) : undefined,
+      saleRecency: saleRecencyComponents ? saleRecencyComponents.get(parcel.lead_key) : undefined,
+    };
+    const score = computeScore(components, weights);
+    return Object.assign({}, parcel, { score, _components: components });
+  });
+  scored.sort(compareLeadsDesc);
+  scored.forEach((lead, index) => {
+    lead.rank = index + 1;
+  });
+  return scored;
+}
+
+// `module` doesn't exist in a browser <script> tag -- guarded so this
+// file can be `require()`d by Node tests AND inlined verbatim into the
+// page by the build scripts, with the same functions landing as plain
+// globals either way (see this file's own module docstring).
+if (typeof module !== 'undefined') {
+  module.exports = {
+    COMPONENT_ORDER,
+    computeScore,
+    percentileRank,
+    computeJobSizeComponent,
+    computeSaleRecencyComponent,
+    compareLeadsDesc,
+    rankLeads,
+  };
+}
+
+</script>
+<script>
+/*
+ * Filter/toggle predicates for the interactive slider Lead Board.
+ *
+ * Plain CommonJS, no dependencies -- same "loadable by Node and inlined
+ * into the page verbatim" discipline as `scoring.js`.
+ *
+ * Two filters Prompt W originally asked for -- "siding material
+ * multi-select" and "roof cover multi-select" -- are DELIBERATELY NOT
+ * implemented here: Step 0's real coverage report found `exterior_wall_1`/
+ * `roof_cover_material` populated on only ~25% of all scoreable parcels,
+ * and WORSE (4.1-4.4%) within the three claimed towns specifically --
+ * the raw material/roof TEXT fields are a scrape-only signal, essentially
+ * absent on the thousands of state-CAMA-merge rows. The `siding_weight`
+ * SLIDER stays (its underlying `score_siding_component` is 100% present,
+ * defaulting to a neutral 0.5 when the raw material is unknown, the same
+ * "unknown is neutral" convention the scoring module already documents)
+ * -- only the raw-field MULTI-SELECT filters are dropped, per the
+ * "drop a knob under ~40% populated, say so" rule. See the final report
+ * for the exact numbers.
+ */
+'use strict';
+
+function isClaimedTerritory(parcel, soldTowns) {
+  const allowed = new Set(soldTowns.map((t) => t.toLowerCase()));
+  return allowed.has((parcel.town || '').toLowerCase());
+}
+
+function isWorked(parcel) {
+  // No pipeline row at all means unworked, same as a 'new' row -- only a
+  // non-'new' status counts as worked. See Prompt W's follow-up addendum:
+  // deliberately NOT the digest's own dedup rule (which excludes a lead
+  // the moment ANY lead_pipeline row exists, 'new' included) -- the board
+  // wants to distinguish "surfaced but not yet worked" from "worked".
+  const status = parcel.flags.pipeline_status;
+  return status !== null && status !== undefined && status !== 'new';
+}
+
+function isMailedOrShown(parcel) {
+  return Boolean(parcel.flags.mailed_or_shown);
+}
+
+function isUnreachable(parcel) {
+  return Boolean(parcel.flags.is_absentee) || Boolean(parcel.flags.is_delinquent);
+}
+
+function isStateOnly(parcel) {
+  return Boolean(parcel.flags.is_state_only);
+}
+
+function hasRealPermitHistory(parcel) {
+  return Boolean(parcel.flags.permit_data_available) && !parcel.flags.permit_history_short;
+}
+
+function inRange(value, min, max) {
+  if (value === null || value === undefined) return true; // unknown passes through, never silently excluded
+  if (min !== null && min !== undefined && value < min) return false;
+  if (max !== null && max !== undefined && value > max) return false;
+  return true;
+}
+
+/**
+ * `filterState` shape:
+ * {
+ *   towns: Set<string> | null,           // null/empty = all towns
+ *   yearBuiltMin, yearBuiltMax: number | null,
+ *   canopyMin, canopyMax: number | null, // pct_tree_canopy_nearby
+ *   jobSizePctMin, jobSizePctMax: number | null, // 0-100, against the jobSize component
+ *   requireRealPermitHistory: boolean,
+ *   hideClaimed: boolean,
+ *   hideWorked: boolean,
+ *   hideMailed: boolean,
+ *   hideUnreachable: boolean,
+ *   showStateOnly: boolean,              // when false, state-only rows are excluded entirely
+ * }
+ * `soldTowns`: array of claimed-town names (from export metadata).
+ * `jobSizePercentiles`: Map<lead_key, 0-1 percentile> (same map `rankLeads`
+ * was given) -- needed here since the job-size RANGE filter operates on
+ * the computed percentile, not a raw field, same basis as the slider.
+ */
+function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
+  return parcels.filter((parcel) => {
+    if (filterState.towns && filterState.towns.size > 0 && !filterState.towns.has(parcel.town)) {
+      return false;
+    }
+    if (!inRange(parcel.year_built, filterState.yearBuiltMin, filterState.yearBuiltMax)) {
+      return false;
+    }
+    if (!inRange(parcel.pct_tree_canopy_nearby, filterState.canopyMin, filterState.canopyMax)) {
+      return false;
+    }
+    if (filterState.jobSizePctMin !== null || filterState.jobSizePctMax !== null) {
+      const pct = jobSizePercentiles ? jobSizePercentiles.get(parcel.lead_key) : null;
+      const pct100 = pct === null || pct === undefined ? null : pct * 100;
+      if (!inRange(pct100, filterState.jobSizePctMin, filterState.jobSizePctMax)) {
+        return false;
+      }
+    }
+    if (filterState.requireRealPermitHistory && !hasRealPermitHistory(parcel)) {
+      return false;
+    }
+    if (filterState.hideClaimed && isClaimedTerritory(parcel, soldTowns)) {
+      return false;
+    }
+    if (filterState.hideWorked && isWorked(parcel)) {
+      return false;
+    }
+    if (filterState.hideMailed && isMailedOrShown(parcel)) {
+      return false;
+    }
+    if (filterState.hideUnreachable && isUnreachable(parcel)) {
+      return false;
+    }
+    if (!filterState.showStateOnly && isStateOnly(parcel)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+const DEFAULT_FILTER_STATE = {
+  towns: null,
+  yearBuiltMin: null,
+  yearBuiltMax: null,
+  canopyMin: null,
+  canopyMax: null,
+  jobSizePctMin: null,
+  jobSizePctMax: null,
+  requireRealPermitHistory: false,
+  hideClaimed: true,
+  hideWorked: true,
+  hideMailed: true,
+  hideUnreachable: true,
+  showStateOnly: false,
+};
+
+if (typeof module !== 'undefined') {
+  module.exports = {
+    isClaimedTerritory,
+    isWorked,
+    isMailedOrShown,
+    isUnreachable,
+    isStateOnly,
+    hasRealPermitHistory,
+    inRange,
+    applyFilters,
+    DEFAULT_FILTER_STATE,
+  };
+}
+
+</script>
+<script>
+/*
+ * Named weight presets for the interactive slider Lead Board.
+ *
+ * `storm` is included in every preset for completeness (the combine
+ * formula in `scoring.js` reads it the same as any other weight), but
+ * Step 0 confirmed `score_storm_component` is a pure constant (a single
+ * shared `nearest_storm_event_date` value) across literally all 24,578
+ * real scoreable parcels -- the storm slider is DISABLED in the page UI
+ * ("county-wide constant, no differentiation yet"), so its weight here
+ * never actually changes any ranking regardless of preset.
+ */
+'use strict';
+
+const PRESETS = {
+  darren_default: {
+    label: 'Darren default',
+    description: "Current config weights -- property age leads, siding close behind, canopy and storm supporting. This is what's actually driving today's Sheet/digest picks.",
+    weights: {
+      property: 0.5,
+      canopy: 0.15,
+      storm: 0.05,
+      siding: 0.3,
+      jobSize: 0,
+      saleRecency: 0,
+    },
+  },
+  siding_focused: {
+    label: 'Siding-focused',
+    description: 'Siding becomes the heaviest signal (0.50, up from 0.30) -- for a call where the crew wants to lead with "whose siding is visibly overdue" rather than "whose house is oldest." Property age stays second (0.30, down from 0.50) since it is still real evidence, just no longer the lead signal; canopy/storm unchanged.',
+    weights: {
+      property: 0.3,
+      canopy: 0.15,
+      storm: 0.05,
+      siding: 0.5,
+      jobSize: 0,
+      saleRecency: 0,
+    },
+  },
+  bigger_jobs: {
+    label: 'Bigger jobs',
+    description: 'Job size (from living sqft, falling back to assessed value) becomes meaningful at 0.35 -- the single heaviest signal -- but property age stays a close second at 0.30 rather than being crowded out, since an old house with overdue siding is still the core pitch; siding/canopy/storm all step down to make room.',
+    weights: {
+      property: 0.3,
+      canopy: 0.1,
+      storm: 0.05,
+      siding: 0.2,
+      jobSize: 0.35,
+      saleRecency: 0,
+    },
+  },
+};
+
+if (typeof module !== 'undefined') {
+  module.exports = { PRESETS };
+}
+
+</script>
+<script>
+/*
+ * Shareable-state encode/decode for the interactive slider Lead Board --
+ * every slider/filter/toggle value round-trips through the URL hash, so
+ * sending a crew's own URL reproduces exactly what they were looking at.
+ *
+ * Plain CommonJS, no dependencies. Encoding is base64(JSON) of a plain
+ * object (not a hand-rolled compact query string) -- this board's state
+ * is small (a handful of weights/filters/booleans, never per-lead data),
+ * so a readable, trivially-versioned JSON shape was chosen over a denser
+ * encoding that would need its own versioning scheme to ever change.
+ */
+'use strict';
+
+/**
+ * `state` -> a URL-hash-safe string (no `#`, already base64url-encoded).
+ * `towns` (a `Set` in the live filter state) is serialized as a sorted
+ * array for a stable, diffable encoding -- insertion order in a `Set`
+ * would otherwise make two functionally-identical states encode
+ * differently.
+ */
+function encodeState(state) {
+  const serializable = Object.assign({}, state, {
+    towns: state.towns ? Array.from(state.towns).sort() : null,
+  });
+  const json = JSON.stringify(serializable);
+  return base64UrlEncode(json);
+}
+
+/**
+ * The inverse of `encodeState` -- returns `null` (never throws) for a
+ * hash that isn't valid base64/JSON, so a corrupted or hand-edited URL
+ * degrades to "use the defaults" rather than a crash. `towns` is
+ * restored to a `Set` (the shape every other function in this module
+ * expects), matching `DEFAULT_FILTER_STATE.towns`'s own `null`-or-`Set`
+ * convention in `filters.js`.
+ */
+function decodeState(hash) {
+  try {
+    const json = base64UrlDecode(hash);
+    const parsed = JSON.parse(json);
+    if (parsed.towns) {
+      parsed.towns = new Set(parsed.towns);
+    }
+    return parsed;
+  } catch (err) {
+    return null;
+  }
+}
+
+function base64UrlEncode(str) {
+  const base64 =
+    typeof Buffer !== 'undefined'
+      ? Buffer.from(str, 'utf-8').toString('base64')
+      : btoa(unescape(encodeURIComponent(str)));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function base64UrlDecode(encoded) {
+  let base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  while (base64.length % 4) base64 += '=';
+  return typeof Buffer !== 'undefined'
+    ? Buffer.from(base64, 'base64').toString('utf-8')
+    : decodeURIComponent(escape(atob(base64)));
+}
+
+/**
+ * The plain-JSON payload the page's "Copy settings" button copies to the
+ * clipboard -- deliberately the SAME serializable shape `encodeState`
+ * hashes (not a prettified subset), so what Darren pastes into a message
+ * is exactly reconstructible, byte-for-byte, from `decodeState` too.
+ */
+function settingsToClipboardJson(state) {
+  const serializable = Object.assign({}, state, {
+    towns: state.towns ? Array.from(state.towns).sort() : null,
+  });
+  return JSON.stringify(serializable, null, 2);
+}
+
+if (typeof module !== 'undefined') {
+  module.exports = { encodeState, decodeState, settingsToClipboardJson };
+}
+
+</script>
+<script>
+/*
+ * Page wiring for the interactive slider Lead Board -- DOM rendering and
+ * event handling only. Not required()'d by the Node tests (no DOM in
+ * Node) -- validated instead by Playwright screenshots (Prompt W Step 5).
+ * Depends on globals defined by scoring.js/filters.js/presets.js/state.js,
+ * which the build scripts inline BEFORE this file in the final page, and
+ * on a global `LEAD_BOARD_DATA` object (the export JSON, or the demo
+ * fixture) injected the same way.
+ */
+(function () {
+  'use strict';
+
+  const DATA = window.LEAD_BOARD_DATA;
+  const PARCELS = DATA.parcels;
+  const SOLD_TOWNS = DATA.metadata.sold_towns || [];
+  const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
+
+  // ---- percentile tables, computed ONCE over the full population ----
+  const sortedSqft = PARCELS.map((p) => p.living_area_sqft).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
+  const sortedAssessedValue = PARCELS.map((p) => p.assessed_value).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
+  const sortedSaleYears = PARCELS.map((p) => p.last_sale_year).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
+
+  const jobSizeByLeadKey = new Map();
+  const saleRecencyByLeadKey = new Map();
+  for (const p of PARCELS) {
+    jobSizeByLeadKey.set(p.lead_key, computeJobSizeComponent(p, sortedSqft, sortedAssessedValue));
+    saleRecencyByLeadKey.set(p.lead_key, computeSaleRecencyComponent(p, sortedSaleYears));
+  }
+
+  // ---- default ranking (for rank-change arrows), fixed for the session ----
+  const DEFAULT_WEIGHTS = PRESETS.darren_default.weights;
+  const defaultRanked = rankLeads(PARCELS, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey);
+  const defaultRankByLeadKey = new Map(defaultRanked.map((lead) => [lead.lead_key, lead.rank]));
+
+  // ---- live state ----
+  let state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    weights: Object.assign({}, DEFAULT_WEIGHTS),
+    activePreset: 'darren_default',
+    topN: 20,
+  });
+
+  const fromHash = window.location.hash ? decodeState(window.location.hash.slice(1)) : null;
+  if (fromHash) {
+    state = Object.assign({}, state, fromHash);
+  }
+
+  // ---- DOM refs ----
+  const el = (id) => document.getElementById(id);
+  const root = el('app-root');
+
+  function fmtPct(x) {
+    return `${Math.round(x * 100)}%`;
+  }
+
+  function renderTownChips() {
+    const container = el('town-chips');
+    container.innerHTML = '';
+    ALL_TOWNS.forEach((town) => {
+      const claimed = isClaimedTerritory({ town }, SOLD_TOWNS);
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip' + (state.towns && state.towns.has(town) ? ' chip-active' : '');
+      chip.textContent = town + (claimed ? ' · claimed' : '');
+      chip.addEventListener('click', () => {
+        const towns = state.towns ? new Set(state.towns) : new Set();
+        if (towns.has(town)) towns.delete(town);
+        else towns.add(town);
+        state.towns = towns.size > 0 ? towns : null;
+        renderAll();
+      });
+      container.appendChild(chip);
+    });
+  }
+
+  function slider(id, label, key, min, max, step, disabled, note) {
+    return `
+      <div class="control">
+        <label for="${id}">${label}: <span id="${id}-val">${state.weights[key].toFixed(2)}</span></label>
+        <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${state.weights[key]}" ${disabled ? 'disabled' : ''}>
+        ${note ? `<div class="note">${note}</div>` : ''}
+      </div>`;
+  }
+
+  function renderControls() {
+    el('weight-sliders').innerHTML = [
+      slider('w-property', 'Property age', 'property', 0, 1, 0.01, false),
+      slider('w-canopy', 'Tree canopy', 'canopy', 0, 1, 0.01, false),
+      slider('w-siding', 'Siding', 'siding', 0, 1, 0.01, false),
+      slider('w-storm', 'Storm history', 'storm', 0, 1, 0.01, true, 'County-wide constant, no differentiation yet.'),
+      slider('w-jobsize', 'Job size', 'jobSize', 0, 1, 0.01, false),
+      slider('w-salerecency', 'Sale recency', 'saleRecency', 0, 1, 0.01, false),
+    ].join('');
+
+    ['property', 'canopy', 'siding', 'jobsize', 'salerecency'].forEach((idKey, i) => {
+      const key = ['property', 'canopy', 'siding', 'jobSize', 'saleRecency'][i];
+      const input = el(`w-${idKey}`);
+      input.addEventListener('input', () => {
+        state.weights[key] = parseFloat(input.value);
+        state.activePreset = null;
+        el(`w-${idKey}-val`).textContent = state.weights[key].toFixed(2);
+        renderResults();
+        syncHash();
+      });
+    });
+
+    el('preset-buttons').innerHTML = Object.keys(PRESETS)
+      .map((key) => `<button type="button" class="preset-btn${state.activePreset === key ? ' preset-btn-active' : ''}" data-preset="${key}" title="${PRESETS[key].description}">${PRESETS[key].label}</button>`)
+      .join('');
+    Array.from(el('preset-buttons').querySelectorAll('button')).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.getAttribute('data-preset');
+        state.weights = Object.assign({}, PRESETS[key].weights);
+        state.activePreset = key;
+        renderAll();
+      });
+    });
+
+    renderTownChips();
+
+    el('toggle-claimed').checked = state.hideClaimed;
+    el('toggle-worked').checked = state.hideWorked;
+    el('toggle-mailed').checked = state.hideMailed;
+    el('toggle-unreachable').checked = state.hideUnreachable;
+    el('toggle-state-only').checked = state.showStateOnly;
+    el('toggle-permit-history').checked = state.requireRealPermitHistory;
+
+    el('top-n').value = String(state.topN);
+  }
+
+  function bindStaticControls() {
+    el('toggle-claimed').addEventListener('change', (e) => { state.hideClaimed = e.target.checked; renderResults(); syncHash(); });
+    el('toggle-worked').addEventListener('change', (e) => { state.hideWorked = e.target.checked; renderResults(); syncHash(); });
+    el('toggle-mailed').addEventListener('change', (e) => { state.hideMailed = e.target.checked; renderResults(); syncHash(); });
+    el('toggle-unreachable').addEventListener('change', (e) => { state.hideUnreachable = e.target.checked; renderResults(); syncHash(); });
+    el('toggle-state-only').addEventListener('change', (e) => { state.showStateOnly = e.target.checked; renderResults(); syncHash(); });
+    el('toggle-permit-history').addEventListener('change', (e) => { state.requireRealPermitHistory = e.target.checked; renderResults(); syncHash(); });
+    el('top-n').addEventListener('change', (e) => { state.topN = parseInt(e.target.value, 10); renderResults(); syncHash(); });
+
+    ['year-min', 'year-max', 'canopy-min', 'canopy-max', 'jobsize-min', 'jobsize-max'].forEach((id) => {
+      el(id).addEventListener('input', () => {
+        const v = el(id).value;
+        const num = v === '' ? null : parseFloat(v);
+        if (id === 'year-min') state.yearBuiltMin = num;
+        if (id === 'year-max') state.yearBuiltMax = num;
+        if (id === 'canopy-min') state.canopyMin = num;
+        if (id === 'canopy-max') state.canopyMax = num;
+        if (id === 'jobsize-min') state.jobSizePctMin = num;
+        if (id === 'jobsize-max') state.jobSizePctMax = num;
+        renderResults();
+        syncHash();
+      });
+    });
+
+    el('copy-settings').addEventListener('click', () => {
+      const json = settingsToClipboardJson(state);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json);
+      }
+      const status = el('copy-status');
+      status.textContent = 'Copied!';
+      setTimeout(() => { status.textContent = ''; }, 1500);
+    });
+
+    el('theme-toggle').addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+    });
+  }
+
+  function leadRowHtml(lead) {
+    const defaultRank = defaultRankByLeadKey.get(lead.lead_key);
+    const delta = defaultRank - lead.rank; // positive = moved up
+    let arrow = '<span class="rank-same">—</span>';
+    if (delta > 0) arrow = `<span class="rank-up">▲ ${delta}</span>`;
+    else if (delta < 0) arrow = `<span class="rank-down">▼ ${Math.abs(delta)}</span>`;
+
+    const stateOnlyBadge = lead.flags.is_state_only
+      ? '<span class="badge badge-state-only">state data only, not verified</span>'
+      : '';
+    const verifyLink = lead.source_url
+      ? `<a href="${lead.source_url}" target="_blank" rel="noopener" class="verify-link">Verify this property</a>`
+      : '';
+
+    const components = lead._components || {};
+    const COMPONENT_LABELS = {
+      property: 'Property age',
+      canopy: 'Tree canopy',
+      siding: 'Siding',
+      storm: 'Storm history',
+      jobSize: 'Job size',
+      saleRecency: 'Sale recency',
+    };
+    const bars = ['property', 'canopy', 'siding', 'storm', 'jobSize', 'saleRecency']
+      .filter((k) => components[k] !== null && components[k] !== undefined)
+      .map((k) => `<div class="bar-row"><span class="bar-label">${COMPONENT_LABELS[k]}</span><div class="bar-track"><div class="bar-fill" style="width:${fmtPct(components[k])}"></div></div></div>`)
+      .join('');
+
+    return `
+      <li class="lead-row" data-lead-key="${lead.lead_key}" data-rank="${lead.rank}">
+        <div class="lead-row-main">
+          <span class="lead-rank">#${lead.rank}</span>
+          <span class="lead-arrow">${arrow}</span>
+          <span class="lead-town">${lead.town}</span>
+          <span class="lead-built">built ${lead.year_built || '—'}</span>
+          ${stateOnlyBadge}
+          <button type="button" class="expand-btn" data-key="${lead.lead_key}">details</button>
+        </div>
+        <div class="lead-row-detail" id="detail-${cssSafe(lead.lead_key)}" hidden>
+          ${bars}
+          ${verifyLink}
+        </div>
+      </li>`;
+  }
+
+  function cssSafe(key) {
+    return key.replace(/[^a-zA-Z0-9_-]/g, '_');
+  }
+
+  function renderResults() {
+    const ranked = rankLeads(PARCELS, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey);
+    const filtered = applyFilters(ranked, state, SOLD_TOWNS, jobSizeByLeadKey);
+    el('result-count').textContent = `${filtered.length} leads match current filters`;
+    const top = filtered.slice(0, state.topN);
+    el('results-list').innerHTML = top.map(leadRowHtml).join('');
+    Array.from(el('results-list').querySelectorAll('.expand-btn')).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const detail = el('detail-' + cssSafe(btn.getAttribute('data-key')));
+        detail.hidden = !detail.hidden;
+      });
+    });
+  }
+
+  function syncHash() {
+    window.location.hash = encodeState(state);
+  }
+
+  function renderAll() {
+    renderControls();
+    renderResults();
+    syncHash();
+  }
+
+  bindStaticControls();
+  renderAll();
+})();
+
+</script>
+</body>
+</html>

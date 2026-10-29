@@ -37,7 +37,12 @@ max risk, restoring real spread across the bulk of the population).
 `low_extreme=0.0` is unchanged -- a natural boundary that doesn't need
 real-data calibration.
 
-**Weights**: `property=0.65` (up slightly from 0.6 -- still the confirmed
+**Weights** (as of THIS 2026-09-09 pass, three signals only, no siding
+yet -- SUPERSEDED 2026-09-15 by the four-signal weights in the "Siding
+signal" section below: `property=0.50`/`canopy=0.15`/`storm=0.05`/
+`siding=0.30`, current `DEFAULT_*_WEIGHT` reality; the numbers in THIS
+paragraph are historical narrative only, not the live defaults):
+`property=0.65` (up slightly from 0.6 -- still the confirmed
 leading signal), `canopy=0.28` (up from 0.25 -- now has real, confirmed
 differentiating power once recalibrated above), `storm=0.07` (down
 substantially from 0.15). The storm reduction is grounded in a real,
