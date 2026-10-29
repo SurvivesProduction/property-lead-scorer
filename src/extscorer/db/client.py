@@ -559,6 +559,88 @@ def fill_state_enrichment_fields_if_null(
     return row
 
 
+def update_parcel_scraped_base_fields(
+    conn: psycopg.Connection,
+    parcel_id: Any,
+    year_built: int | None,
+    living_area_sqft: int | None,
+    roof_cover_material: str | None,
+    exterior_wall_1: str | None,
+    exterior_wall_2: str | None,
+    building_percent_good: int | None,
+    owner_name: str | None,
+    owner_mailing_address: str | None,
+    is_absentee_owner: bool,
+    source_url: str | None,
+    enrichment_status: str,
+    needs_review: bool,
+    review_reason: str | None,
+) -> dict[str, Any]:
+    """Promote a `state_only` row to a fully-scraped one -- Phase 2
+    enrichment (2026-10-29, property-lead-scorer-full's targeted VGSI/
+    propertyrecordcards.com enrichment of the score-ceiling slice).
+
+    Blind-overwrites every field here (never coalesced) -- the merge
+    rule this implements is "a real scrape wins over the state layer's
+    own value for every overlapping field," the same direction
+    `upsert_parcel`'s own blind-overwrite columns already use for a
+    genuine re-scrape. Deliberately NARROWER than `upsert_parcel`: no
+    `address`/`town`/`parcel_id` parameter exists here at all, so this
+    function physically cannot touch a row's identity, even though this
+    merge rule is the opposite direction from `fill_state_enrichment_
+    fields_if_null`'s NULL-only one -- the one thing both functions
+    agree on is identity is never a parameter either way.
+
+    `assessed_value`/`state_parcel_ref`/`last_sale_date`/`last_sale_
+    price` are NOT touched here -- VGSI/propertyrecordcards.com never
+    expose those fields (confirmed in the original audit), so the
+    state layer's own values for them are simply left in place, no
+    conflict to resolve.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            update parcels
+            set year_built = %(year_built)s,
+                living_area_sqft = %(living_area_sqft)s,
+                roof_cover_material = %(roof_cover_material)s,
+                exterior_wall_1 = %(exterior_wall_1)s,
+                exterior_wall_2 = %(exterior_wall_2)s,
+                building_percent_good = %(building_percent_good)s,
+                owner_name = %(owner_name)s,
+                owner_mailing_address = %(owner_mailing_address)s,
+                is_absentee_owner = %(is_absentee_owner)s,
+                source_url = %(source_url)s,
+                enrichment_status = %(enrichment_status)s,
+                needs_review = %(needs_review)s,
+                review_reason = %(review_reason)s,
+                updated_at = now()
+            where id = %(id)s
+            returning *
+            """,
+            {
+                "id": parcel_id,
+                "year_built": year_built,
+                "living_area_sqft": living_area_sqft,
+                "roof_cover_material": roof_cover_material,
+                "exterior_wall_1": exterior_wall_1,
+                "exterior_wall_2": exterior_wall_2,
+                "building_percent_good": building_percent_good,
+                "owner_name": owner_name,
+                "owner_mailing_address": owner_mailing_address,
+                "is_absentee_owner": is_absentee_owner,
+                "source_url": source_url,
+                "enrichment_status": enrichment_status,
+                "needs_review": needs_review,
+                "review_reason": review_reason,
+            },
+        )
+        row = cur.fetchone()
+    conn.commit()
+    assert row is not None
+    return row
+
+
 def update_parcel_canopy_fields(
     conn: psycopg.Connection,
     parcel_id: Any,
