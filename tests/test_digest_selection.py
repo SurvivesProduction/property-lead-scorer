@@ -4,6 +4,7 @@ from extscorer.digest.selection import (
     DEFAULT_LEADS_PER_DIGEST,
     filter_sold_territory,
     is_likely_unreachable_owner,
+    is_on_active_mail_drop,
     is_unverified_state_only,
     select_new_leads_for_pipeline,
     select_unsent_leads,
@@ -208,3 +209,37 @@ def test_filter_sold_territory_is_case_insensitive() -> None:
 def test_filter_sold_territory_empty_list_excludes_everyone() -> None:
     parcels = [{"town": "Canterbury"}]
     assert filter_sold_territory(parcels, []) == []
+
+
+# --- is_on_active_mail_drop / mail-drop exclusion (2026-10-29) ---
+
+
+def test_is_on_active_mail_drop_true_when_annotated() -> None:
+    assert is_on_active_mail_drop({"on_active_mail_drop": True}) is True
+
+
+def test_is_on_active_mail_drop_false_when_absent_or_false() -> None:
+    # Unknown/absent must not be treated as confirmed -- a caller that
+    # never annotates this field (every scoring/dashboard/export script
+    # that calls rank_candidates directly) must not see parcels silently
+    # excluded as a side effect.
+    assert is_on_active_mail_drop({}) is False
+    assert is_on_active_mail_drop({"on_active_mail_drop": False}) is False
+
+
+def test_select_new_leads_for_pipeline_excludes_active_mail_drop_rows() -> None:
+    pairs = [
+        (_FakeLead("A"), _pipeline_parcel("A", on_active_mail_drop=True)),
+        (_FakeLead("B"), _pipeline_parcel("B")),
+    ]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=10)
+    assert [p["id"] for _, p in selected] == ["row-B"]
+
+
+def test_select_new_leads_for_pipeline_excluded_mail_drop_row_does_not_count_against_limit() -> None:
+    pairs = [
+        (_FakeLead("A"), _pipeline_parcel("A", on_active_mail_drop=True)),
+        (_FakeLead("B"), _pipeline_parcel("B")),
+    ]
+    selected = select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=1)
+    assert [p["id"] for _, p in selected] == ["row-B"]

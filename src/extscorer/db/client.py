@@ -14,7 +14,7 @@ Tool 3's precedent over Tool 1's 3-tier fuzzy match.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 import psycopg
@@ -994,3 +994,126 @@ def lead_pipeline_row_count_for_client(conn: psycopg.Connection, client_id: str)
     with conn.cursor() as cur:
         cur.execute("select count(*) from lead_pipeline where client_id = %(client_id)s", {"client_id": client_id})
         return cur.fetchone()[0]
+
+
+def get_or_create_mail_drop(conn: psycopg.Connection, client_id: str, drop_name: str) -> dict[str, Any]:
+    """Return the `mail_drops` row for `(client_id, drop_name)`, creating
+    it with `status='planned'` if it doesn't exist yet -- idempotent, so
+    re-running `scripts/record_mail_drop.py` (full repo) against the same
+    drop name never creates a duplicate row or resets an already-'sent'
+    drop back to 'planned'.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "select * from mail_drops where client_id = %(client_id)s and drop_name = %(drop_name)s",
+            {"client_id": client_id, "drop_name": drop_name},
+        )
+        row = cur.fetchone()
+        if row is not None:
+            return row
+        cur.execute(
+            "insert into mail_drops (client_id, drop_name) values (%(client_id)s, %(drop_name)s) returning *",
+            {"client_id": client_id, "drop_name": drop_name},
+        )
+        row = cur.fetchone()
+    conn.commit()
+    assert row is not None
+    return row
+
+
+def insert_mail_drop_parcels(conn: psycopg.Connection, drop_id: Any, entries: list[dict[str, Any]]) -> None:
+    """Insert new `mail_drop_parcels` rows for `drop_id` -- one per parcel
+    the export put on this drop. Each entry is `{"parcel_id": ..., (the
+    real `parcels.id` row id, not the scraper-native text id)
+    "address_snapshot": ..., "recipient_line": ...}`.
+
+    `on conflict ... do nothing`, same idempotency convention as
+    `insert_lead_pipeline_entries` -- re-running the record script against
+    the same drop (e.g. after regenerating the CSV to add a few more
+    addresses) never duplicates a parcel already recorded on it.
+    """
+    if not entries:
+        return
+    with conn.cursor() as cur:
+        cur.executemany(
+            "insert into mail_drop_parcels (drop_id, parcel_id, address_snapshot, recipient_line) "
+            "values (%(drop_id)s, %(parcel_id)s, %(address_snapshot)s, %(recipient_line)s) "
+            "on conflict (drop_id, parcel_id) do nothing",
+            [
+                {
+                    "drop_id": drop_id,
+                    "parcel_id": entry["parcel_id"],
+                    "address_snapshot": entry["address_snapshot"],
+                    "recipient_line": entry["recipient_line"],
+                }
+                for entry in entries
+            ],
+        )
+    conn.commit()
+
+
+def active_mail_drop_parcel_ids_for_client(conn: psycopg.Connection, client_id: str) -> set[Any]:
+    """Every `parcels.id` currently on a 'planned' or 'sent' mail drop for
+    `client_id` -- the exclusion set `extscorer.digest.selection
+    .is_on_active_mail_drop` needs annotated onto each parcel dict before
+    selection runs, and the set `scripts/rolling_enrich_state_only.py`
+    (full repo) needs to keep its own pool count from overstating how
+    many scraped parcels are genuinely still available: a parcel already
+    queued for (or sent on) a physical mailing isn't a real digest
+    candidate either, same as one flagged `is_likely_unreachable_owner`.
+
+    Both 'planned' and 'sent' count -- a drop still "in flight" (cards not
+    confirmed mailed yet) must already exclude its own parcels, not just
+    once `mark_mail_drop_sent.py` has run.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            "select distinct mdp.parcel_id from mail_drop_parcels mdp "
+            "join mail_drops md on md.id = mdp.drop_id "
+            "where md.client_id = %(client_id)s and md.status in ('planned', 'sent')",
+            {"client_id": client_id},
+        )
+        return {row[0] for row in cur.fetchall()}
+
+
+def mail_drop_parcels_for_drop(conn: psycopg.Connection, drop_id: Any) -> list[dict[str, Any]]:
+    """Every `mail_drop_parcels` row for one drop, joined to its parcel's
+    current `town`/`parcel_id`/`lead_score` -- used to regenerate a drop's
+    mail-list CSV and to verify a digest dry run has zero overlap with an
+    already-recorded drop.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "select mdp.*, p.town, p.parcel_id as scraper_parcel_id, p.owner_name, p.lead_score, p.source_url "
+            "from mail_drop_parcels mdp join parcels p on p.id = mdp.parcel_id "
+            "where mdp.drop_id = %(drop_id)s",
+            {"drop_id": drop_id},
+        )
+        return cur.fetchall()
+
+
+def mark_mail_drop_sent(conn: psycopg.Connection, client_id: str, drop_name: str, sent_at: datetime) -> dict[str, Any]:
+    """Flip a `mail_drops` row to `status='sent'` with the given
+    `sent_at` timestamp -- the one write `scripts/mark_mail_drop_sent.py`
+    (full repo) makes, run by hand once the cards actually go out.
+
+    Raises `ValueError` if no drop exists for `(client_id, drop_name)` --
+    a CLI typo in the drop name should fail loudly, not silently do
+    nothing. Idempotent on an already-'sent' drop: re-running with a
+    corrected date just overwrites `sent_at` again, same "always write
+    the current value" convention the rest of this module's update
+    functions already follow.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "update mail_drops set status = 'sent', sent_at = %(sent_at)s "
+            "where client_id = %(client_id)s and drop_name = %(drop_name)s "
+            "returning *",
+            {"client_id": client_id, "drop_name": drop_name, "sent_at": sent_at},
+        )
+        row = cur.fetchone()
+    if row is None:
+        conn.rollback()
+        raise ValueError(f"No mail_drops row for client_id={client_id!r}, drop_name={drop_name!r}")
+    conn.commit()
+    return row

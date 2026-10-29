@@ -101,6 +101,31 @@ def is_unverified_state_only(parcel: dict[str, Any]) -> bool:
     return parcel.get("enrichment_status") == "state_only"
 
 
+def is_on_active_mail_drop(parcel: dict[str, Any]) -> bool:
+    """True if this parcel is already queued for (or confirmed sent on) a
+    physical mail drop -- 2026-10-29, mail-drop tracking. A lead already
+    on its way to a mailbox shouldn't also get re-surfaced as a brand-new
+    digest/Sheet pick.
+
+    Reads a plain `on_active_mail_drop` key the CALLER must annotate onto
+    the parcel dict before ranking/selection -- this function doesn't
+    query `mail_drops`/`mail_drop_parcels` itself, same "pure function,
+    no DB dependency" discipline every other predicate in this module
+    already follows. See `extscorer_full.sheets.sync.run_sync_cycle`
+    (the one real caller) for where that annotation happens, via
+    `extscorer.db.client.active_mail_drop_parcel_ids_for_client`.
+
+    Defaults to `False` (not excluded) when the key is absent -- a
+    caller that never annotates this field (every scoring/dashboard/
+    export script that calls `rank_candidates` directly, none of which
+    touch mail drops) must not have parcels silently excluded as a side
+    effect of a field it never set, same "unknown must not be treated as
+    confirmed" discipline `is_likely_unreachable_owner`/`is_unverified_
+    state_only` already document for their own signals.
+    """
+    return bool(parcel.get("on_active_mail_drop"))
+
+
 def select_unsent_leads(
     ranked_leads_with_parcels: list[tuple[Any, dict[str, Any]]],
     already_sent_parcel_row_ids: set[Any],
@@ -170,6 +195,13 @@ def select_new_leads_for_pipeline(
     recorded only after a real, non-review send, independent of this
     pipeline-based selection.
 
+    Also excludes `is_unverified_state_only` rows (2026-10-28) and, as of
+    2026-10-29, `is_on_active_mail_drop` rows -- a parcel already queued
+    for (or sent on) a physical mail drop is excluded the same way an
+    absentee/tax-delinquent or state-only parcel already is: still scored,
+    still visible on the internal dashboard, just not re-surfaced as a
+    new digest/Sheet pick.
+
     `limit <= 0` returns `[]` immediately -- same guard and reason as
     `select_unsent_leads` above.
     """
@@ -182,6 +214,8 @@ def select_new_leads_for_pipeline(
         if is_likely_unreachable_owner(parcel):
             continue
         if is_unverified_state_only(parcel):
+            continue
+        if is_on_active_mail_drop(parcel):
             continue
         selected.append((lead, parcel))
         if len(selected) >= limit:
