@@ -22,6 +22,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from extscorer.config import DatabaseConfig
+from extscorer.normalize.address import normalize_street_address
 from extscorer.normalize.schema import ParcelLeadRecord, StormEventRecord
 
 
@@ -638,6 +639,90 @@ def update_parcel_scraped_base_fields(
         row = cur.fetchone()
     conn.commit()
     assert row is not None
+    return row
+
+
+def state_only_parcel_ids_by_address(conn: psycopg.Connection, client_id: str, town: str) -> dict[str, Any]:
+    """`{normalized_address: id}` for every `enrichment_status='state_
+    only'` row in this one `(client_id, town)` -- built ONCE per town by
+    a scraper's own run loop (2026-10-29, the "loose ends" pass), so a
+    crawl that reaches an address the state-CAMA merge already added can
+    promote that SAME row in place instead of inserting a second one.
+
+    **Why this has to exist at all**: `upsert_parcel`'s own dedup key is
+    `(client_id, town, parcel_id)` -- a scraper's native id (VGSI's `pid`,
+    propertyrecordcards.com's `uniqueid`) can NEVER equal a state-only
+    row's minted `state-*` key (`extscorer.normalize.address.mint_
+    address_town_parcel_id`), so a plain `upsert_parcel` call could never
+    find/update that row on its own, no matter how the address lines up
+    -- it would silently insert a second row for the same real property
+    instead. Fetched once per town (not once per parcel) specifically to
+    avoid turning a 200-parcel crawl into 200 full-town-sized queries --
+    see `run_client.py`'s own per-town caching for how this gets called.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "select id, address from parcels where client_id = %(client_id)s and town = %(town)s "
+            "and enrichment_status = 'state_only'",
+            {"client_id": client_id, "town": town},
+        )
+        rows = cur.fetchall()
+    index: dict[str, Any] = {}
+    for row in rows:
+        key = normalize_street_address(row["address"])
+        if key and key not in index:  # first-seen wins on a rare duplicate-address state_only row
+            index[key] = row["id"]
+    return index
+
+
+def promote_state_only_parcel_from_scrape(conn: psycopg.Connection, parcel_id: Any, record: ParcelLeadRecord) -> dict[str, Any]:
+    """Merge a real scrape's `ParcelLeadRecord` onto an EXISTING state-
+    only row by its own primary key, preserving that row's `address`/
+    `town`/`parcel_id` -- the promotion path `state_only_parcel_ids_by_
+    address` above exists to make reachable. Same merge direction
+    `update_parcel_scraped_base_fields` already implements (a real scrape
+    wins over the state layer's value for every overlapping field); this
+    is a thin wrapper that pulls those field values from an already-
+    normalized `ParcelLeadRecord` instead of a source's raw parse dict,
+    since a scraper source hands this function a fully-built record, not
+    raw HTML-parsed fields the way `scripts/enrich_state_only_phase2.py`
+    does.
+
+    Also writes permit/siding fields via `update_parcel_permit_and_
+    siding_fields` when `record.permit_data_available` is true (a real
+    propertyrecordcards.com-sourced record) -- `update_parcel_scraped_
+    base_fields` alone has no permit columns of its own.
+    """
+    row = update_parcel_scraped_base_fields(
+        conn,
+        parcel_id,
+        year_built=record.year_built,
+        living_area_sqft=record.living_area_sqft,
+        roof_cover_material=record.roof_cover_material,
+        exterior_wall_1=record.exterior_wall_1,
+        exterior_wall_2=record.exterior_wall_2,
+        building_percent_good=record.building_percent_good,
+        owner_name=record.owner_name,
+        owner_mailing_address=record.owner_mailing_address,
+        is_absentee_owner=record.is_absentee_owner,
+        source_url=record.source_url,
+        enrichment_status="scraped",
+        needs_review=record.needs_review,
+        review_reason=record.review_reason,
+    )
+    if record.permit_data_available:
+        row = update_parcel_permit_and_siding_fields(
+            conn,
+            parcel_id,
+            exterior_wall_1=record.exterior_wall_1,
+            siding_data_source=record.siding_data_source,
+            permit_data_available=record.permit_data_available,
+            permit_history=record.permit_history,
+            exterior_permit_count=record.exterior_permit_count,
+            most_recent_exterior_permit_date=record.most_recent_exterior_permit_date,
+            most_recent_exterior_permit_type=record.most_recent_exterior_permit_type,
+            permit_history_since=record.permit_history_since,
+        )
     return row
 
 
