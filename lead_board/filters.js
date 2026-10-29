@@ -4,21 +4,46 @@
  * Plain CommonJS, no dependencies -- same "loadable by Node and inlined
  * into the page verbatim" discipline as `scoring.js`.
  *
- * Two filters Prompt W originally asked for -- "siding material
- * multi-select" and "roof cover multi-select" -- are DELIBERATELY NOT
- * implemented here: Step 0's real coverage report found `exterior_wall_1`/
- * `roof_cover_material` populated on only ~25% of all scoreable parcels,
- * and WORSE (4.1-4.4%) within the three claimed towns specifically --
- * the raw material/roof TEXT fields are a scrape-only signal, essentially
- * absent on the thousands of state-CAMA-merge rows. The `siding_weight`
- * SLIDER stays (its underlying `score_siding_component` is 100% present,
- * defaulting to a neutral 0.5 when the raw material is unknown, the same
- * "unknown is neutral" convention the scoring module already documents)
- * -- only the raw-field MULTI-SELECT filters are dropped, per the
- * "drop a knob under ~40% populated, say so" rule. See the final report
- * for the exact numbers.
+ * **Siding-material / roof-cover-material filters, history** (2026-10-29
+ * follow-up): the FIRST Step 0 pass measured coverage across every
+ * scoreable parcel (state-only rows included) and found `exterior_wall_1`/
+ * `roof_cover_material` at only ~25% overall / ~4% in claimed towns --
+ * dropped as too sparse. A follow-up asked to re-measure against the
+ * DEFAULT-filtered population instead (state-only rows excluded, the
+ * view a viewer actually sees by default) -- there, coverage is 96.0%/
+ * 95.8% overall and 73.5%/70.5% in claimed towns, comfortably over the
+ * 40% bar. RESTORED. The original number wasn't wrong, it was measuring
+ * the wrong population: state-only rows (the state-CAMA-merge majority)
+ * never carry these fields at all, so including them in the denominator
+ * made a well-populated SCRAPED signal look sparse.
+ *
+ * Both filters bucket a parcel with no material on file as `'Unknown'`
+ * (`materialsOf`/`roofCoverOf` below) rather than excluding it from the
+ * filter's own option list -- this makes the bucket visible and
+ * selectable instead of silently dropping unknowns, and means a
+ * state-only row (never has material data) shows as `'Unknown'` the
+ * moment the "show state-data-only rows" toggle makes it visible at
+ * all, with no separate state-only-specific logic needed here.
  */
 'use strict';
+
+const UNKNOWN_MATERIAL = 'Unknown';
+
+/**
+ * Reads the PRECOMPUTED `siding_families`/`roof_family` fields the
+ * export/build scripts already wrote (Python, via `extscorer.normalize
+ * .materials` -- see that module's own docstring) -- no classification
+ * logic lives here, only the "missing data -> Unknown" bucketing
+ * convention, so the filter and the real siding-score dispatch can never
+ * silently classify the same raw text two different ways.
+ */
+function materialsOf(parcel) {
+  return parcel.siding_families && parcel.siding_families.length > 0 ? parcel.siding_families : [UNKNOWN_MATERIAL];
+}
+
+function roofCoverOf(parcel) {
+  return parcel.roof_family || UNKNOWN_MATERIAL;
+}
 
 function isClaimedTerritory(parcel, soldTowns) {
   const allowed = new Set(soldTowns.map((t) => t.toLowerCase()));
@@ -65,6 +90,8 @@ function inRange(value, min, max) {
  *   yearBuiltMin, yearBuiltMax: number | null,
  *   canopyMin, canopyMax: number | null, // pct_tree_canopy_nearby
  *   jobSizePctMin, jobSizePctMax: number | null, // 0-100, against the jobSize component
+ *   sidingMaterials: Set<string> | null, // against materialsOf(parcel); 'Unknown' is a selectable bucket
+ *   roofCoverMaterials: Set<string> | null, // against roofCoverOf(parcel); 'Unknown' is a selectable bucket
  *   requireRealPermitHistory: boolean,
  *   hideClaimed: boolean,
  *   hideWorked: boolean,
@@ -92,6 +119,17 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
       const pct = jobSizePercentiles ? jobSizePercentiles.get(parcel.lead_key) : null;
       const pct100 = pct === null || pct === undefined ? null : pct * 100;
       if (!inRange(pct100, filterState.jobSizePctMin, filterState.jobSizePctMax)) {
+        return false;
+      }
+    }
+    if (filterState.sidingMaterials && filterState.sidingMaterials.size > 0) {
+      const materials = materialsOf(parcel);
+      if (!materials.some((m) => filterState.sidingMaterials.has(m))) {
+        return false;
+      }
+    }
+    if (filterState.roofCoverMaterials && filterState.roofCoverMaterials.size > 0) {
+      if (!filterState.roofCoverMaterials.has(roofCoverOf(parcel))) {
         return false;
       }
     }
@@ -125,6 +163,8 @@ const DEFAULT_FILTER_STATE = {
   canopyMax: null,
   jobSizePctMin: null,
   jobSizePctMax: null,
+  sidingMaterials: null,
+  roofCoverMaterials: null,
   requireRealPermitHistory: false,
   hideClaimed: true,
   hideWorked: true,
@@ -141,6 +181,9 @@ if (typeof module !== 'undefined') {
     isUnreachable,
     isStateOnly,
     hasRealPermitHistory,
+    materialsOf,
+    roofCoverOf,
+    UNKNOWN_MATERIAL,
     inRange,
     applyFilters,
     DEFAULT_FILTER_STATE,

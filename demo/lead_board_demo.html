@@ -107,6 +107,7 @@
   .bar-track { flex: 1; height: 8px; background: var(--bar-track); border-radius: 4px; overflow: hidden; }
   .bar-fill { height: 100%; background: var(--bar-fill); }
   .verify-link { font-size: 12px; color: var(--accent); display: inline-block; margin-top: 4px; }
+  .verify-link-none { color: var(--muted); font-style: italic; }
   #copy-status { font-size: 12px; color: var(--accent); margin-left: 8px; }
   .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
   @media (max-width: 480px) {
@@ -135,6 +136,10 @@
   <div class="panel">
     <h2>Towns</h2>
     <div id="town-chips"></div>
+    <h2 style="margin-top:16px;">Siding material</h2>
+    <div id="siding-chips"></div>
+    <h2 style="margin-top:16px;">Roof cover</h2>
+    <div id="roof-chips"></div>
     <h2 style="margin-top:16px;">Filters</h2>
     <div class="filters-grid">
       <div><label for="year-min">Year built, min</label><input type="number" id="year-min" placeholder="any"></div>
@@ -154,7 +159,7 @@
       <label><input type="checkbox" id="toggle-worked"> Hide worked leads</label>
       <label><input type="checkbox" id="toggle-mailed"> Hide already mailed/shown</label>
       <label><input type="checkbox" id="toggle-unreachable"> Hide unreachable (absentee/delinquent)</label>
-      <label><input type="checkbox" id="toggle-state-only"> Show state-data-only rows</label>
+      <label id="toggle-state-only-row"><input type="checkbox" id="toggle-state-only"> Show state-data-only rows</label>
     </div>
   </div>
 
@@ -175,7 +180,7 @@
 </div>
 
 <script>
-var LEAD_BOARD_DATA = {"metadata": {"client_id": "demo", "as_of_year": 2026, "sold_towns": ["Fakington"], "export_timestamp": "2026-10-29T00:00:00+00:00", "weights": {"property_weight": 0.5, "canopy_weight": 0.15, "storm_weight": 0.05, "siding_weight": 0.3}}, "parcels": [{"parcel_id": "1", "lead_key": "Fakington:1", "town": "Fakington", "address": "1 Example Rd", "year_built": 1850, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 2400, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=1", "components": {"property": 0.95, "canopy": 0.8, "storm": 1.0, "siding": 0.9}, "lead_score": 0.915, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "2", "lead_key": "Fakington:2", "town": "Fakington", "address": "2 Example Rd", "year_built": 1920, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=2", "components": {"property": 0.7, "canopy": 0.3, "storm": 1.0, "siding": 0.6}, "lead_score": 0.625, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": true, "is_state_only": false}}, {"parcel_id": "3", "lead_key": "Fakington:3", "town": "Fakington", "address": "3 Example Rd", "year_built": 1965, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.3, "canopy": 0.5, "storm": 1.0, "siding": 0.2}, "lead_score": 0.33499999999999996, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "4", "lead_key": "Mapleford:4", "town": "Mapleford", "address": "4 Fictional Ave", "year_built": 1900, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=4", "components": {"property": 0.8, "canopy": 0.6, "storm": 1.0, "siding": 0.85}, "lead_score": 0.795, "flags": {"permit_data_available": true, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "5", "lead_key": "Mapleford:5", "town": "Mapleford", "address": "5 Fictional Ave", "year_built": 1975, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.5, "canopy": 0.4, "storm": 1.0, "siding": 0.1}, "lead_score": 0.39, "flags": {"permit_data_available": true, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": true}}, {"parcel_id": "6", "lead_key": "Smallville:6", "town": "Smallville", "address": "6 Pretend St", "year_built": 1990, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.45, "canopy": 0.5, "storm": 1.0, "siding": 0.5}, "lead_score": 0.5, "flags": {"permit_data_available": true, "permit_history_short": true, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "7", "lead_key": "Smallville:7", "town": "Smallville", "address": "7 Pretend St", "year_built": 1945, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.75, "canopy": 0.7, "storm": 1.0, "siding": 0.8}, "lead_score": 0.77, "flags": {"permit_data_available": true, "permit_history_short": true, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "8", "lead_key": "Pineville:8", "town": "Pineville", "address": "8 Imaginary Ln", "year_built": 1955, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.65, "canopy": 0.2, "storm": 1.0, "siding": 0.4}, "lead_score": 0.5249999999999999, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "estimate booked", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "9", "lead_key": "Pineville:9", "town": "Pineville", "address": "9 Imaginary Ln", "year_built": 1988, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.4, "canopy": 0.6, "storm": 1.0, "siding": 0.3}, "lead_score": 0.43000000000000005, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "not interested", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "10", "lead_key": "Pineville:10", "town": "Pineville", "address": "10 Imaginary Ln", "year_built": 1932, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.85, "canopy": 0.9, "storm": 1.0, "siding": 0.7}, "lead_score": 0.8200000000000001, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "new", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "11", "lead_key": "Pineville:11", "town": "Pineville", "address": "11 Imaginary Ln", "year_built": 1998, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.2, "canopy": 0.4, "storm": 1.0, "siding": 0.15}, "lead_score": 0.255, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "12", "lead_key": "Pineville:12", "town": "Pineville", "address": "12 Imaginary Ln", "year_built": 1890, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.9, "canopy": 0.55, "storm": 1.0, "siding": 0.6}, "lead_score": 0.7625, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": true}}, {"parcel_id": "13", "lead_key": "Pineville:13", "town": "Pineville", "address": "13 Imaginary Ln", "year_built": 1960, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.6, "canopy": 0.3, "storm": 1.0, "siding": 0.5}, "lead_score": 0.5449999999999999, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": true, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "14", "lead_key": "Pineville:14", "town": "Pineville", "address": "14 Imaginary Ln", "year_built": 1940, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.72, "canopy": 0.45, "storm": 1.0, "siding": 0.65}, "lead_score": 0.6725, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": true, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "15", "lead_key": "Pineville:15", "town": "Pineville", "address": "15 Imaginary Ln", "year_built": 1972, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 3800, "assessed_value": 410000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.5, "canopy": 0.5, "storm": 1.0, "siding": 0.5}, "lead_score": 0.525, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "16", "lead_key": "Pineville:16", "town": "Pineville", "address": "16 Imaginary Ln", "year_built": 1980, "siding_materials": [], "roof_cover_material": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 900, "assessed_value": 120000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.45, "canopy": 0.35, "storm": 1.0, "siding": 0.3}, "lead_score": 0.4175, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}]};
+var LEAD_BOARD_DATA = {"metadata": {"client_id": "demo", "as_of_year": 2026, "sold_towns": ["Fakington"], "export_timestamp": "2026-10-29T00:00:00+00:00", "weights": {"property_weight": 0.5, "canopy_weight": 0.15, "storm_weight": 0.05, "siding_weight": 0.3}}, "parcels": [{"parcel_id": "1", "lead_key": "Fakington:1", "town": "Fakington", "address": "1 Example Rd", "year_built": 1850, "siding_materials": ["Clapboard"], "siding_families": ["durable_original"], "roof_cover_material": "Asphalt Shingle", "roof_family": "asphalt", "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 2400, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=1", "components": {"property": 0.95, "canopy": 0.8, "storm": 1.0, "siding": 0.9}, "lead_score": 0.915, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "2", "lead_key": "Fakington:2", "town": "Fakington", "address": "2 Example Rd", "year_built": 1920, "siding_materials": ["Vinyl"], "siding_families": ["vinyl"], "roof_cover_material": "Asphalt Shingle", "roof_family": "asphalt", "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=2", "components": {"property": 0.7, "canopy": 0.3, "storm": 1.0, "siding": 0.6}, "lead_score": 0.625, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": true, "is_state_only": false}}, {"parcel_id": "3", "lead_key": "Fakington:3", "town": "Fakington", "address": "3 Example Rd", "year_built": 1965, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.3, "canopy": 0.5, "storm": 1.0, "siding": 0.2}, "lead_score": 0.33499999999999996, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "4", "lead_key": "Mapleford:4", "town": "Mapleford", "address": "4 Fictional Ave", "year_built": 1900, "siding_materials": ["Wood"], "siding_families": ["durable_original"], "roof_cover_material": "Metal/Tin", "roof_family": "metal", "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": "https://example.invalid/Parcel.aspx?pid=4", "components": {"property": 0.8, "canopy": 0.6, "storm": 1.0, "siding": 0.85}, "lead_score": 0.795, "flags": {"permit_data_available": true, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "5", "lead_key": "Mapleford:5", "town": "Mapleford", "address": "5 Fictional Ave", "year_built": 1975, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.5, "canopy": 0.4, "storm": 1.0, "siding": 0.1}, "lead_score": 0.39, "flags": {"permit_data_available": true, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": true}}, {"parcel_id": "6", "lead_key": "Smallville:6", "town": "Smallville", "address": "6 Pretend St", "year_built": 1990, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.45, "canopy": 0.5, "storm": 1.0, "siding": 0.5}, "lead_score": 0.5, "flags": {"permit_data_available": true, "permit_history_short": true, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "7", "lead_key": "Smallville:7", "town": "Smallville", "address": "7 Pretend St", "year_built": 1945, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.75, "canopy": 0.7, "storm": 1.0, "siding": 0.8}, "lead_score": 0.77, "flags": {"permit_data_available": true, "permit_history_short": true, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "8", "lead_key": "Pineville:8", "town": "Pineville", "address": "8 Imaginary Ln", "year_built": 1955, "siding_materials": ["Vinyl Siding/Clapboards"], "siding_families": ["vinyl", "durable_original"], "roof_cover_material": "Slate", "roof_family": "slate", "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.65, "canopy": 0.2, "storm": 1.0, "siding": 0.4}, "lead_score": 0.5249999999999999, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "estimate booked", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "9", "lead_key": "Pineville:9", "town": "Pineville", "address": "9 Imaginary Ln", "year_built": 1988, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.4, "canopy": 0.6, "storm": 1.0, "siding": 0.3}, "lead_score": 0.43000000000000005, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "not interested", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "10", "lead_key": "Pineville:10", "town": "Pineville", "address": "10 Imaginary Ln", "year_built": 1932, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.85, "canopy": 0.9, "storm": 1.0, "siding": 0.7}, "lead_score": 0.8200000000000001, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": "new", "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "11", "lead_key": "Pineville:11", "town": "Pineville", "address": "11 Imaginary Ln", "year_built": 1998, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.2, "canopy": 0.4, "storm": 1.0, "siding": 0.15}, "lead_score": 0.255, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "12", "lead_key": "Pineville:12", "town": "Pineville", "address": "12 Imaginary Ln", "year_built": 1890, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": null, "source_url": null, "components": {"property": 0.9, "canopy": 0.55, "storm": 1.0, "siding": 0.6}, "lead_score": 0.7625, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": true}}, {"parcel_id": "13", "lead_key": "Pineville:13", "town": "Pineville", "address": "13 Imaginary Ln", "year_built": 1960, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.6, "canopy": 0.3, "storm": 1.0, "siding": 0.5}, "lead_score": 0.5449999999999999, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": true, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "14", "lead_key": "Pineville:14", "town": "Pineville", "address": "14 Imaginary Ln", "year_built": 1940, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 1800, "assessed_value": 250000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.72, "canopy": 0.45, "storm": 1.0, "siding": 0.65}, "lead_score": 0.6725, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": true, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "15", "lead_key": "Pineville:15", "town": "Pineville", "address": "15 Imaginary Ln", "year_built": 1972, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 3800, "assessed_value": 410000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.5, "canopy": 0.5, "storm": 1.0, "siding": 0.5}, "lead_score": 0.525, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}, {"parcel_id": "16", "lead_key": "Pineville:16", "town": "Pineville", "address": "16 Imaginary Ln", "year_built": 1980, "siding_materials": [], "siding_families": [], "roof_cover_material": null, "roof_family": null, "pct_tree_canopy_nearby": 40.0, "living_area_sqft": 900, "assessed_value": 120000.0, "last_sale_year": 2010, "source_url": null, "components": {"property": 0.45, "canopy": 0.35, "storm": 1.0, "siding": 0.3}, "lead_score": 0.4175, "flags": {"permit_data_available": false, "permit_history_short": false, "is_absentee": false, "is_delinquent": false, "pipeline_status": null, "mailed_or_shown": false, "is_state_only": false}}]};
 </script>
 <script>
 /*
@@ -392,21 +397,46 @@ if (typeof module !== 'undefined') {
  * Plain CommonJS, no dependencies -- same "loadable by Node and inlined
  * into the page verbatim" discipline as `scoring.js`.
  *
- * Two filters Prompt W originally asked for -- "siding material
- * multi-select" and "roof cover multi-select" -- are DELIBERATELY NOT
- * implemented here: Step 0's real coverage report found `exterior_wall_1`/
- * `roof_cover_material` populated on only ~25% of all scoreable parcels,
- * and WORSE (4.1-4.4%) within the three claimed towns specifically --
- * the raw material/roof TEXT fields are a scrape-only signal, essentially
- * absent on the thousands of state-CAMA-merge rows. The `siding_weight`
- * SLIDER stays (its underlying `score_siding_component` is 100% present,
- * defaulting to a neutral 0.5 when the raw material is unknown, the same
- * "unknown is neutral" convention the scoring module already documents)
- * -- only the raw-field MULTI-SELECT filters are dropped, per the
- * "drop a knob under ~40% populated, say so" rule. See the final report
- * for the exact numbers.
+ * **Siding-material / roof-cover-material filters, history** (2026-10-29
+ * follow-up): the FIRST Step 0 pass measured coverage across every
+ * scoreable parcel (state-only rows included) and found `exterior_wall_1`/
+ * `roof_cover_material` at only ~25% overall / ~4% in claimed towns --
+ * dropped as too sparse. A follow-up asked to re-measure against the
+ * DEFAULT-filtered population instead (state-only rows excluded, the
+ * view a viewer actually sees by default) -- there, coverage is 96.0%/
+ * 95.8% overall and 73.5%/70.5% in claimed towns, comfortably over the
+ * 40% bar. RESTORED. The original number wasn't wrong, it was measuring
+ * the wrong population: state-only rows (the state-CAMA-merge majority)
+ * never carry these fields at all, so including them in the denominator
+ * made a well-populated SCRAPED signal look sparse.
+ *
+ * Both filters bucket a parcel with no material on file as `'Unknown'`
+ * (`materialsOf`/`roofCoverOf` below) rather than excluding it from the
+ * filter's own option list -- this makes the bucket visible and
+ * selectable instead of silently dropping unknowns, and means a
+ * state-only row (never has material data) shows as `'Unknown'` the
+ * moment the "show state-data-only rows" toggle makes it visible at
+ * all, with no separate state-only-specific logic needed here.
  */
 'use strict';
+
+const UNKNOWN_MATERIAL = 'Unknown';
+
+/**
+ * Reads the PRECOMPUTED `siding_families`/`roof_family` fields the
+ * export/build scripts already wrote (Python, via `extscorer.normalize
+ * .materials` -- see that module's own docstring) -- no classification
+ * logic lives here, only the "missing data -> Unknown" bucketing
+ * convention, so the filter and the real siding-score dispatch can never
+ * silently classify the same raw text two different ways.
+ */
+function materialsOf(parcel) {
+  return parcel.siding_families && parcel.siding_families.length > 0 ? parcel.siding_families : [UNKNOWN_MATERIAL];
+}
+
+function roofCoverOf(parcel) {
+  return parcel.roof_family || UNKNOWN_MATERIAL;
+}
 
 function isClaimedTerritory(parcel, soldTowns) {
   const allowed = new Set(soldTowns.map((t) => t.toLowerCase()));
@@ -453,6 +483,8 @@ function inRange(value, min, max) {
  *   yearBuiltMin, yearBuiltMax: number | null,
  *   canopyMin, canopyMax: number | null, // pct_tree_canopy_nearby
  *   jobSizePctMin, jobSizePctMax: number | null, // 0-100, against the jobSize component
+ *   sidingMaterials: Set<string> | null, // against materialsOf(parcel); 'Unknown' is a selectable bucket
+ *   roofCoverMaterials: Set<string> | null, // against roofCoverOf(parcel); 'Unknown' is a selectable bucket
  *   requireRealPermitHistory: boolean,
  *   hideClaimed: boolean,
  *   hideWorked: boolean,
@@ -480,6 +512,17 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
       const pct = jobSizePercentiles ? jobSizePercentiles.get(parcel.lead_key) : null;
       const pct100 = pct === null || pct === undefined ? null : pct * 100;
       if (!inRange(pct100, filterState.jobSizePctMin, filterState.jobSizePctMax)) {
+        return false;
+      }
+    }
+    if (filterState.sidingMaterials && filterState.sidingMaterials.size > 0) {
+      const materials = materialsOf(parcel);
+      if (!materials.some((m) => filterState.sidingMaterials.has(m))) {
+        return false;
+      }
+    }
+    if (filterState.roofCoverMaterials && filterState.roofCoverMaterials.size > 0) {
+      if (!filterState.roofCoverMaterials.has(roofCoverOf(parcel))) {
         return false;
       }
     }
@@ -513,6 +556,8 @@ const DEFAULT_FILTER_STATE = {
   canopyMax: null,
   jobSizePctMin: null,
   jobSizePctMax: null,
+  sidingMaterials: null,
+  roofCoverMaterials: null,
   requireRealPermitHistory: false,
   hideClaimed: true,
   hideWorked: true,
@@ -529,6 +574,9 @@ if (typeof module !== 'undefined') {
     isUnreachable,
     isStateOnly,
     hasRealPermitHistory,
+    materialsOf,
+    roofCoverOf,
+    UNKNOWN_MATERIAL,
     inRange,
     applyFilters,
     DEFAULT_FILTER_STATE,
@@ -608,35 +656,50 @@ if (typeof module !== 'undefined') {
  */
 'use strict';
 
+// Every filter-state field that is a `Set` in memory (vs. a plain array
+// once serialized through JSON, which has no `Set` type) -- named
+// explicitly rather than type-sniffed, so `decodeState` knows exactly
+// which array fields to rehydrate back into `Set`s. Keep in sync with
+// `filters.js`'s `DEFAULT_FILTER_STATE` whenever a new Set-valued filter
+// is added (`sidingMaterials`/`roofCoverMaterials` added 2026-10-29
+// alongside those two filters).
+const SET_FIELDS = ['towns', 'sidingMaterials', 'roofCoverMaterials'];
+
+function toSerializable(state) {
+  const serializable = Object.assign({}, state);
+  for (const field of SET_FIELDS) {
+    serializable[field] = state[field] ? Array.from(state[field]).sort() : null;
+  }
+  return serializable;
+}
+
 /**
  * `state` -> a URL-hash-safe string (no `#`, already base64url-encoded).
- * `towns` (a `Set` in the live filter state) is serialized as a sorted
- * array for a stable, diffable encoding -- insertion order in a `Set`
- * would otherwise make two functionally-identical states encode
- * differently.
+ * Every `SET_FIELDS` entry is serialized as a sorted array for a stable,
+ * diffable encoding -- insertion order in a `Set` would otherwise make
+ * two functionally-identical states encode differently.
  */
 function encodeState(state) {
-  const serializable = Object.assign({}, state, {
-    towns: state.towns ? Array.from(state.towns).sort() : null,
-  });
-  const json = JSON.stringify(serializable);
+  const json = JSON.stringify(toSerializable(state));
   return base64UrlEncode(json);
 }
 
 /**
  * The inverse of `encodeState` -- returns `null` (never throws) for a
  * hash that isn't valid base64/JSON, so a corrupted or hand-edited URL
- * degrades to "use the defaults" rather than a crash. `towns` is
- * restored to a `Set` (the shape every other function in this module
- * expects), matching `DEFAULT_FILTER_STATE.towns`'s own `null`-or-`Set`
+ * degrades to "use the defaults" rather than a crash. Every `SET_FIELDS`
+ * entry is restored to a `Set` (the shape every other function in this
+ * module expects), matching `DEFAULT_FILTER_STATE`'s own `null`-or-`Set`
  * convention in `filters.js`.
  */
 function decodeState(hash) {
   try {
     const json = base64UrlDecode(hash);
     const parsed = JSON.parse(json);
-    if (parsed.towns) {
-      parsed.towns = new Set(parsed.towns);
+    for (const field of SET_FIELDS) {
+      if (parsed[field]) {
+        parsed[field] = new Set(parsed[field]);
+      }
     }
     return parsed;
   } catch (err) {
@@ -667,10 +730,7 @@ function base64UrlDecode(encoded) {
  * is exactly reconstructible, byte-for-byte, from `decodeState` too.
  */
 function settingsToClipboardJson(state) {
-  const serializable = Object.assign({}, state, {
-    towns: state.towns ? Array.from(state.towns).sort() : null,
-  });
-  return JSON.stringify(serializable, null, 2);
+  return JSON.stringify(toSerializable(state), null, 2);
 }
 
 if (typeof module !== 'undefined') {
@@ -695,6 +755,14 @@ if (typeof module !== 'undefined') {
   const PARCELS = DATA.parcels;
   const SOLD_TOWNS = DATA.metadata.sold_towns || [];
   const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
+
+  // 'Unknown' is included automatically whenever any parcel lacks the
+  // field -- materialsOf/roofCoverOf (filters.js) both bucket missing
+  // data there, so it's always a real, selectable option rather than a
+  // silently-dropped filter value.
+  const ALL_SIDING_MATERIALS = Array.from(new Set(PARCELS.flatMap((p) => materialsOf(p)))).sort();
+  const ALL_ROOF_MATERIALS = Array.from(new Set(PARCELS.map((p) => roofCoverOf(p)))).sort();
+  const HAS_STATE_ONLY_DATA = PARCELS.some((p) => p.flags.is_state_only);
 
   // ---- percentile tables, computed ONCE over the full population ----
   const sortedSqft = PARCELS.map((p) => p.living_area_sqft).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
@@ -753,6 +821,62 @@ if (typeof module !== 'undefined') {
     });
   }
 
+  const FAMILY_LABELS = {
+    vinyl: 'Vinyl',
+    durable_original: 'Durable (wood/brick/etc)',
+    other: 'Other',
+    asphalt: 'Asphalt',
+    metal: 'Metal',
+    slate: 'Slate',
+    wood: 'Wood',
+    rubber_rolled: 'Rubber/Rolled',
+    tar_gravel: 'Tar & Gravel',
+    concrete: 'Concrete',
+    Unknown: 'Unknown',
+  };
+
+  /**
+   * Facet counts for a material filter -- how many parcels would match
+   * if every OTHER currently-active filter/toggle stayed applied but
+   * THIS dimension's own selection were cleared. Standard faceted-search
+   * convention: lets a viewer see what's reachable without a chip
+   * disappearing the instant they click it (clicking only narrows the
+   * RESULTS, not the chip's own count basis).
+   */
+  function computeFacetCounts(options, bucketFn, excludeStateKey) {
+    const baseState = Object.assign({}, state, { [excludeStateKey]: null });
+    const matching = applyFilters(PARCELS, baseState, SOLD_TOWNS, jobSizeByLeadKey);
+    const counts = new Map(options.map((o) => [o, 0]));
+    matching.forEach((p) => {
+      bucketFn(p).forEach((bucket) => {
+        if (counts.has(bucket)) counts.set(bucket, counts.get(bucket) + 1);
+      });
+    });
+    return counts;
+  }
+
+  function renderMaterialChips(containerId, options, stateKey, bucketFn) {
+    const container = el(containerId);
+    container.innerHTML = '';
+    const counts = computeFacetCounts(options, bucketFn, stateKey);
+    options
+      .filter((option) => counts.get(option) > 0)
+      .forEach((option) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip' + (state[stateKey] && state[stateKey].has(option) ? ' chip-active' : '');
+        chip.textContent = `${FAMILY_LABELS[option] || option} (${counts.get(option)})`;
+        chip.addEventListener('click', () => {
+          const selected = state[stateKey] ? new Set(state[stateKey]) : new Set();
+          if (selected.has(option)) selected.delete(option);
+          else selected.add(option);
+          state[stateKey] = selected.size > 0 ? selected : null;
+          renderAll();
+        });
+        container.appendChild(chip);
+      });
+  }
+
   function slider(id, label, key, min, max, step, disabled, note) {
     return `
       <div class="control">
@@ -796,7 +920,7 @@ if (typeof module !== 'undefined') {
       });
     });
 
-    renderTownChips();
+    refreshChips();
 
     el('toggle-claimed').checked = state.hideClaimed;
     el('toggle-worked').checked = state.hideWorked;
@@ -804,17 +928,34 @@ if (typeof module !== 'undefined') {
     el('toggle-unreachable').checked = state.hideUnreachable;
     el('toggle-state-only').checked = state.showStateOnly;
     el('toggle-permit-history').checked = state.requireRealPermitHistory;
+    // The toggle hides itself when the embedded dataset carries no
+    // state-only rows at all (the --share build, see build_lead_board.py)
+    // -- flipping it would do nothing, so don't offer it.
+    el('toggle-state-only-row').style.display = HAS_STATE_ONLY_DATA ? '' : 'none';
 
     el('top-n').value = String(state.topN);
   }
 
+  // Siding/roof chip COUNTS depend on every other active filter/toggle
+  // (see computeFacetCounts) -- any handler that changes a filter/toggle
+  // other than the chips themselves must refresh the chip groups too, or
+  // their counts go stale. Deliberately NOT a full `renderControls()`
+  // rebuild here: that would also re-create the filter <input> elements,
+  // dropping focus/cursor position while a viewer is still typing in a
+  // range field -- this only touches the chip containers.
+  function refreshChips() {
+    renderTownChips();
+    renderMaterialChips('siding-chips', ALL_SIDING_MATERIALS, 'sidingMaterials', materialsOf);
+    renderMaterialChips('roof-chips', ALL_ROOF_MATERIALS, 'roofCoverMaterials', (p) => [roofCoverOf(p)]);
+  }
+
   function bindStaticControls() {
-    el('toggle-claimed').addEventListener('change', (e) => { state.hideClaimed = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-worked').addEventListener('change', (e) => { state.hideWorked = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-mailed').addEventListener('change', (e) => { state.hideMailed = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-unreachable').addEventListener('change', (e) => { state.hideUnreachable = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-state-only').addEventListener('change', (e) => { state.showStateOnly = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-permit-history').addEventListener('change', (e) => { state.requireRealPermitHistory = e.target.checked; renderResults(); syncHash(); });
+    el('toggle-claimed').addEventListener('change', (e) => { state.hideClaimed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-worked').addEventListener('change', (e) => { state.hideWorked = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-mailed').addEventListener('change', (e) => { state.hideMailed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-unreachable').addEventListener('change', (e) => { state.hideUnreachable = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-state-only').addEventListener('change', (e) => { state.showStateOnly = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-permit-history').addEventListener('change', (e) => { state.requireRealPermitHistory = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('top-n').addEventListener('change', (e) => { state.topN = parseInt(e.target.value, 10); renderResults(); syncHash(); });
 
     ['year-min', 'year-max', 'canopy-min', 'canopy-max', 'jobsize-min', 'jobsize-max'].forEach((id) => {
@@ -827,6 +968,7 @@ if (typeof module !== 'undefined') {
         if (id === 'canopy-max') state.canopyMax = num;
         if (id === 'jobsize-min') state.jobSizePctMin = num;
         if (id === 'jobsize-max') state.jobSizePctMax = num;
+        refreshChips();
         renderResults();
         syncHash();
       });
@@ -860,7 +1002,7 @@ if (typeof module !== 'undefined') {
       : '';
     const verifyLink = lead.source_url
       ? `<a href="${lead.source_url}" target="_blank" rel="noopener" class="verify-link">Verify this property</a>`
-      : '';
+      : '<span class="verify-link verify-link-none">No record link</span>';
 
     const components = lead._components || {};
     const COMPONENT_LABELS = {

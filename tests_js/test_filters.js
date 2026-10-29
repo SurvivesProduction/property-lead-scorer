@@ -10,6 +10,9 @@ const {
   isUnreachable,
   isStateOnly,
   hasRealPermitHistory,
+  materialsOf,
+  roofCoverOf,
+  UNKNOWN_MATERIAL,
   applyFilters,
   DEFAULT_FILTER_STATE,
 } = require(path.join('..', 'lead_board', 'filters.js'));
@@ -142,6 +145,59 @@ test('applyFilters: requireRealPermitHistory excludes a Windham-shaped (short-hi
   });
   const result = applyFilters(parcels, state, [], new Map());
   assert.deepStrictEqual(result.map((p) => p.lead_key), ['real_history']);
+});
+
+test('materialsOf: reads the precomputed siding_families field, Unknown when empty/missing', () => {
+  assert.deepStrictEqual(materialsOf(parcel({ siding_families: ['vinyl', 'durable_original'] })), ['vinyl', 'durable_original']);
+  assert.deepStrictEqual(materialsOf(parcel({ siding_families: [] })), [UNKNOWN_MATERIAL]);
+  assert.deepStrictEqual(materialsOf(parcel({})), [UNKNOWN_MATERIAL]);
+});
+
+test('roofCoverOf: reads the precomputed roof_family field, Unknown when null/missing', () => {
+  assert.strictEqual(roofCoverOf(parcel({ roof_family: 'asphalt' })), 'asphalt');
+  assert.strictEqual(roofCoverOf(parcel({ roof_family: null })), UNKNOWN_MATERIAL);
+  assert.strictEqual(roofCoverOf(parcel({})), UNKNOWN_MATERIAL);
+});
+
+test('applyFilters: sidingMaterials filter matches a parcel touching ANY selected family (composite case)', () => {
+  const parcels = [
+    parcel({ lead_key: 'vinyl_only', siding_families: ['vinyl'] }),
+    parcel({ lead_key: 'composite', siding_families: ['vinyl', 'durable_original'] }),
+    parcel({ lead_key: 'durable_only', siding_families: ['durable_original'] }),
+    parcel({ lead_key: 'unknown', siding_families: [] }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    sidingMaterials: new Set(['durable_original']),
+    hideClaimed: false, hideWorked: false, hideMailed: false, hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key).sort(), ['composite', 'durable_only']);
+});
+
+test('applyFilters: sidingMaterials filter can select the Unknown bucket', () => {
+  const parcels = [
+    parcel({ lead_key: 'known', siding_families: ['vinyl'] }),
+    parcel({ lead_key: 'unknown', siding_families: [] }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    sidingMaterials: new Set([UNKNOWN_MATERIAL]),
+    hideClaimed: false, hideWorked: false, hideMailed: false, hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['unknown']);
+});
+
+test('applyFilters: roofCoverMaterials filter restricts to the selected roof family', () => {
+  const parcels = [
+    parcel({ lead_key: 'asphalt', roof_family: 'asphalt' }),
+    parcel({ lead_key: 'metal', roof_family: 'metal' }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    roofCoverMaterials: new Set(['metal']),
+    hideClaimed: false, hideWorked: false, hideMailed: false, hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['metal']);
 });
 
 test('applyFilters: job-size percentile range filter', () => {

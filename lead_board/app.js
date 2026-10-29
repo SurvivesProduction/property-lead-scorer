@@ -15,6 +15,14 @@
   const SOLD_TOWNS = DATA.metadata.sold_towns || [];
   const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
 
+  // 'Unknown' is included automatically whenever any parcel lacks the
+  // field -- materialsOf/roofCoverOf (filters.js) both bucket missing
+  // data there, so it's always a real, selectable option rather than a
+  // silently-dropped filter value.
+  const ALL_SIDING_MATERIALS = Array.from(new Set(PARCELS.flatMap((p) => materialsOf(p)))).sort();
+  const ALL_ROOF_MATERIALS = Array.from(new Set(PARCELS.map((p) => roofCoverOf(p)))).sort();
+  const HAS_STATE_ONLY_DATA = PARCELS.some((p) => p.flags.is_state_only);
+
   // ---- percentile tables, computed ONCE over the full population ----
   const sortedSqft = PARCELS.map((p) => p.living_area_sqft).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
   const sortedAssessedValue = PARCELS.map((p) => p.assessed_value).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
@@ -72,6 +80,62 @@
     });
   }
 
+  const FAMILY_LABELS = {
+    vinyl: 'Vinyl',
+    durable_original: 'Durable (wood/brick/etc)',
+    other: 'Other',
+    asphalt: 'Asphalt',
+    metal: 'Metal',
+    slate: 'Slate',
+    wood: 'Wood',
+    rubber_rolled: 'Rubber/Rolled',
+    tar_gravel: 'Tar & Gravel',
+    concrete: 'Concrete',
+    Unknown: 'Unknown',
+  };
+
+  /**
+   * Facet counts for a material filter -- how many parcels would match
+   * if every OTHER currently-active filter/toggle stayed applied but
+   * THIS dimension's own selection were cleared. Standard faceted-search
+   * convention: lets a viewer see what's reachable without a chip
+   * disappearing the instant they click it (clicking only narrows the
+   * RESULTS, not the chip's own count basis).
+   */
+  function computeFacetCounts(options, bucketFn, excludeStateKey) {
+    const baseState = Object.assign({}, state, { [excludeStateKey]: null });
+    const matching = applyFilters(PARCELS, baseState, SOLD_TOWNS, jobSizeByLeadKey);
+    const counts = new Map(options.map((o) => [o, 0]));
+    matching.forEach((p) => {
+      bucketFn(p).forEach((bucket) => {
+        if (counts.has(bucket)) counts.set(bucket, counts.get(bucket) + 1);
+      });
+    });
+    return counts;
+  }
+
+  function renderMaterialChips(containerId, options, stateKey, bucketFn) {
+    const container = el(containerId);
+    container.innerHTML = '';
+    const counts = computeFacetCounts(options, bucketFn, stateKey);
+    options
+      .filter((option) => counts.get(option) > 0)
+      .forEach((option) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip' + (state[stateKey] && state[stateKey].has(option) ? ' chip-active' : '');
+        chip.textContent = `${FAMILY_LABELS[option] || option} (${counts.get(option)})`;
+        chip.addEventListener('click', () => {
+          const selected = state[stateKey] ? new Set(state[stateKey]) : new Set();
+          if (selected.has(option)) selected.delete(option);
+          else selected.add(option);
+          state[stateKey] = selected.size > 0 ? selected : null;
+          renderAll();
+        });
+        container.appendChild(chip);
+      });
+  }
+
   function slider(id, label, key, min, max, step, disabled, note) {
     return `
       <div class="control">
@@ -115,7 +179,7 @@
       });
     });
 
-    renderTownChips();
+    refreshChips();
 
     el('toggle-claimed').checked = state.hideClaimed;
     el('toggle-worked').checked = state.hideWorked;
@@ -123,17 +187,34 @@
     el('toggle-unreachable').checked = state.hideUnreachable;
     el('toggle-state-only').checked = state.showStateOnly;
     el('toggle-permit-history').checked = state.requireRealPermitHistory;
+    // The toggle hides itself when the embedded dataset carries no
+    // state-only rows at all (the --share build, see build_lead_board.py)
+    // -- flipping it would do nothing, so don't offer it.
+    el('toggle-state-only-row').style.display = HAS_STATE_ONLY_DATA ? '' : 'none';
 
     el('top-n').value = String(state.topN);
   }
 
+  // Siding/roof chip COUNTS depend on every other active filter/toggle
+  // (see computeFacetCounts) -- any handler that changes a filter/toggle
+  // other than the chips themselves must refresh the chip groups too, or
+  // their counts go stale. Deliberately NOT a full `renderControls()`
+  // rebuild here: that would also re-create the filter <input> elements,
+  // dropping focus/cursor position while a viewer is still typing in a
+  // range field -- this only touches the chip containers.
+  function refreshChips() {
+    renderTownChips();
+    renderMaterialChips('siding-chips', ALL_SIDING_MATERIALS, 'sidingMaterials', materialsOf);
+    renderMaterialChips('roof-chips', ALL_ROOF_MATERIALS, 'roofCoverMaterials', (p) => [roofCoverOf(p)]);
+  }
+
   function bindStaticControls() {
-    el('toggle-claimed').addEventListener('change', (e) => { state.hideClaimed = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-worked').addEventListener('change', (e) => { state.hideWorked = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-mailed').addEventListener('change', (e) => { state.hideMailed = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-unreachable').addEventListener('change', (e) => { state.hideUnreachable = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-state-only').addEventListener('change', (e) => { state.showStateOnly = e.target.checked; renderResults(); syncHash(); });
-    el('toggle-permit-history').addEventListener('change', (e) => { state.requireRealPermitHistory = e.target.checked; renderResults(); syncHash(); });
+    el('toggle-claimed').addEventListener('change', (e) => { state.hideClaimed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-worked').addEventListener('change', (e) => { state.hideWorked = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-mailed').addEventListener('change', (e) => { state.hideMailed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-unreachable').addEventListener('change', (e) => { state.hideUnreachable = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-state-only').addEventListener('change', (e) => { state.showStateOnly = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    el('toggle-permit-history').addEventListener('change', (e) => { state.requireRealPermitHistory = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('top-n').addEventListener('change', (e) => { state.topN = parseInt(e.target.value, 10); renderResults(); syncHash(); });
 
     ['year-min', 'year-max', 'canopy-min', 'canopy-max', 'jobsize-min', 'jobsize-max'].forEach((id) => {
@@ -146,6 +227,7 @@
         if (id === 'canopy-max') state.canopyMax = num;
         if (id === 'jobsize-min') state.jobSizePctMin = num;
         if (id === 'jobsize-max') state.jobSizePctMax = num;
+        refreshChips();
         renderResults();
         syncHash();
       });
@@ -179,7 +261,7 @@
       : '';
     const verifyLink = lead.source_url
       ? `<a href="${lead.source_url}" target="_blank" rel="noopener" class="verify-link">Verify this property</a>`
-      : '';
+      : '<span class="verify-link verify-link-none">No record link</span>';
 
     const components = lead._components || {};
     const COMPONENT_LABELS = {

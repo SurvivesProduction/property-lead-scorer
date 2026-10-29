@@ -24,6 +24,8 @@ import re
 import sys
 from pathlib import Path
 
+from extscorer.normalize.materials import classify_roof_material, wall_material_families
+
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _LEAD_BOARD_DIR = _REPO_ROOT / "lead_board"
 _OUT_PATH = _REPO_ROOT / "demo" / "lead_board_demo.html"
@@ -61,14 +63,24 @@ def _lead(
         + weights["storm"] * storm_c
         + weights["siding"] * siding_c
     ) / total_w
+
+    siding_materials = siding_materials or []
+    siding_families: list[str] = []
+    for raw in siding_materials:
+        for family in wall_material_families(raw):
+            if family not in siding_families:
+                siding_families.append(family)
+
     return {
         "parcel_id": parcel_id,
         "lead_key": f"{town}:{parcel_id}",
         "town": town,
         "address": address,
         "year_built": year_built,
-        "siding_materials": siding_materials or [],
+        "siding_materials": siding_materials,
+        "siding_families": siding_families,
         "roof_cover_material": roof_cover_material,
+        "roof_family": classify_roof_material(roof_cover_material),
         "pct_tree_canopy_nearby": pct_tree_canopy_nearby,
         "living_area_sqft": living_area_sqft,
         "assessed_value": assessed_value,
@@ -90,13 +102,22 @@ def _lead(
 
 def build_demo_data() -> dict:
     parcels = [
-        _lead("1", "Fakington", "1 Example Rd", 1850, 0.95, 0.8, siding_c=0.9, living_area_sqft=2400, source_url="https://example.invalid/Parcel.aspx?pid=1"),
-        _lead("2", "Fakington", "2 Example Rd", 1920, 0.7, 0.3, siding_c=0.6, mailed_or_shown=True, source_url="https://example.invalid/Parcel.aspx?pid=2"),
+        _lead(
+            "1", "Fakington", "1 Example Rd", 1850, 0.95, 0.8, siding_c=0.9, living_area_sqft=2400,
+            source_url="https://example.invalid/Parcel.aspx?pid=1",
+            siding_materials=["Clapboard"], roof_cover_material="Asphalt Shingle",
+        ),
+        _lead(
+            "2", "Fakington", "2 Example Rd", 1920, 0.7, 0.3, siding_c=0.6, mailed_or_shown=True,
+            source_url="https://example.invalid/Parcel.aspx?pid=2",
+            siding_materials=["Vinyl"], roof_cover_material="Asphalt Shingle",
+        ),
         _lead("3", "Fakington", "3 Example Rd", 1965, 0.3, 0.5, siding_c=0.2, last_sale_year=None),
         _lead(
             "4", "Mapleford", "4 Fictional Ave", 1900, 0.8, 0.6, siding_c=0.85,
             permit_data_available=True, permit_history_short=False,
             source_url="https://example.invalid/Parcel.aspx?pid=4",
+            siding_materials=["Wood"], roof_cover_material="Metal/Tin",
         ),
         _lead(
             "5", "Mapleford", "5 Fictional Ave", 1975, 0.5, 0.4, siding_c=0.1,
@@ -111,7 +132,10 @@ def build_demo_data() -> dict:
             permit_data_available=True, permit_history_short=True,  # Windham-shaped
             last_sale_year=None,
         ),
-        _lead("8", "Pineville", "8 Imaginary Ln", 1955, 0.65, 0.2, siding_c=0.4, pipeline_status="estimate booked"),
+        _lead(
+            "8", "Pineville", "8 Imaginary Ln", 1955, 0.65, 0.2, siding_c=0.4, pipeline_status="estimate booked",
+            siding_materials=["Vinyl Siding/Clapboards"], roof_cover_material="Slate",
+        ),
         _lead("9", "Pineville", "9 Imaginary Ln", 1988, 0.4, 0.6, siding_c=0.3, pipeline_status="not interested"),
         _lead("10", "Pineville", "10 Imaginary Ln", 1932, 0.85, 0.9, siding_c=0.7, pipeline_status="new"),
         _lead("11", "Pineville", "11 Imaginary Ln", 1998, 0.2, 0.4, siding_c=0.15, last_sale_year=None),

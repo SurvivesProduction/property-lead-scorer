@@ -139,18 +139,35 @@ reach for is itself a signal for what to refine next.
     `property-lead-scorer-full/tests_js/test_parity.js` (that repo has
     the real data; this one only has synthetic fixtures).
 - **`lead_board/filters.js`** -- town/year/canopy/job-size range filters,
-  "has real permit history" (`permit_data_available AND NOT
-  permit_history_short`), and five toggles (hide claimed territory, hide
-  worked, hide mailed/shown, hide unreachable, show state-data-only --
-  defaults ON/ON/ON/ON/OFF). Two filters this project originally
-  considered -- siding-material and roof-cover-material multi-selects --
-  were DROPPED: Step 0's real coverage report found both raw text fields
-  populated on only ~25% of scoreable parcels overall and WORSE (~4%)
-  within the three claimed towns specifically, so a multi-select built
-  on them would mostly show "no selection available." The `siding`
-  WEIGHT slider stays -- its underlying `score_siding_component` is
-  100% present (neutral 0.5 when the raw material is unknown), it's only
-  the raw-field filters that were too sparse to ship.
+  siding-material and roof-cover multi-selects, "has real permit history"
+  (`permit_data_available AND NOT permit_history_short`), and five
+  toggles (hide claimed territory, hide worked, hide mailed/shown, hide
+  unreachable, show state-data-only -- defaults ON/ON/ON/ON/OFF).
+  - **Siding/roof filters, history**: a first Step 0 pass measured
+    coverage across ALL scoreable parcels (state-only included) and found
+    the raw text fields at only ~25% overall / ~4% in claimed towns --
+    dropped as too sparse. A follow-up re-measured against the DEFAULT-
+    filtered population (state-only rows excluded, what a viewer actually
+    sees by default) and found 96%/96% overall, 73%/70% in claimed towns
+    -- comfortably over the bar. RESTORED, but not as raw text: the real
+    data has ~85/~26 distinct free-text variants from inconsistent
+    scraping ("Clapboard" vs "Clapboards" vs "Clapboards/Board & Batten"),
+    an unusable wall of near-duplicate chips. `extscorer.normalize
+    .materials` (public repo's Python package) classifies each raw value
+    into a small family set instead -- reusing `extscorer.scoring.basic`'s
+    own siding-family keyword list for siding ("one shared mapping, not a
+    second copy in JS"; a composite value like "Vinyl Siding/Clapboards"
+    matches BOTH the Vinyl and Durable chips, unlike the single-family
+    dispatch scoring itself uses) and a new roof-only classifier (no
+    scoring equivalent exists for `roof_cover_material`) -- see that
+    module's own docstring. The board's JS just reads the precomputed
+    `siding_families`/`roof_family` fields; no classification logic lives
+    client-side. Each chip shows a live count (every OTHER active
+    filter/toggle applied, that dimension's own selection cleared) and
+    hides itself at zero. The `siding` WEIGHT slider was never affected
+    by any of this -- its `score_siding_component` is 100% present
+    (neutral 0.5 when the raw material is unknown) regardless of the raw
+    text's own sparsity.
 - **`lead_board/presets.js`** -- "Darren default" (the real config
   weights), "Siding-focused" (siding becomes the heaviest signal),
   "Bigger jobs" (job size becomes meaningful while property age still

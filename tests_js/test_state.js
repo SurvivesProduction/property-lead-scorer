@@ -10,6 +10,8 @@ const { PRESETS } = require(path.join('..', 'lead_board', 'presets.js'));
 function sampleState() {
   return Object.assign({}, DEFAULT_FILTER_STATE, {
     towns: new Set(['Killingly', 'Ashford']),
+    sidingMaterials: new Set(['vinyl', 'durable_original']),
+    roofCoverMaterials: new Set(['asphalt']),
     weights: PRESETS.siding_focused.weights,
     topN: 50,
   });
@@ -30,6 +32,15 @@ test('encodeState/decodeState round-trip: towns Set survives as a Set with the s
   const decoded = decodeState(encodeState(state));
   assert.ok(decoded.towns instanceof Set);
   assert.deepStrictEqual(Array.from(decoded.towns).sort(), ['Ashford', 'Killingly']);
+});
+
+test('encodeState/decodeState round-trip: sidingMaterials/roofCoverMaterials Sets survive too', () => {
+  const state = sampleState();
+  const decoded = decodeState(encodeState(state));
+  assert.ok(decoded.sidingMaterials instanceof Set);
+  assert.deepStrictEqual(Array.from(decoded.sidingMaterials).sort(), ['durable_original', 'vinyl']);
+  assert.ok(decoded.roofCoverMaterials instanceof Set);
+  assert.deepStrictEqual(Array.from(decoded.roofCoverMaterials), ['asphalt']);
 });
 
 test('encodeState: produces a URL-hash-safe string (no +, /, =, #)', () => {

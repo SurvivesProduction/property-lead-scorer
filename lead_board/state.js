@@ -11,35 +11,50 @@
  */
 'use strict';
 
+// Every filter-state field that is a `Set` in memory (vs. a plain array
+// once serialized through JSON, which has no `Set` type) -- named
+// explicitly rather than type-sniffed, so `decodeState` knows exactly
+// which array fields to rehydrate back into `Set`s. Keep in sync with
+// `filters.js`'s `DEFAULT_FILTER_STATE` whenever a new Set-valued filter
+// is added (`sidingMaterials`/`roofCoverMaterials` added 2026-10-29
+// alongside those two filters).
+const SET_FIELDS = ['towns', 'sidingMaterials', 'roofCoverMaterials'];
+
+function toSerializable(state) {
+  const serializable = Object.assign({}, state);
+  for (const field of SET_FIELDS) {
+    serializable[field] = state[field] ? Array.from(state[field]).sort() : null;
+  }
+  return serializable;
+}
+
 /**
  * `state` -> a URL-hash-safe string (no `#`, already base64url-encoded).
- * `towns` (a `Set` in the live filter state) is serialized as a sorted
- * array for a stable, diffable encoding -- insertion order in a `Set`
- * would otherwise make two functionally-identical states encode
- * differently.
+ * Every `SET_FIELDS` entry is serialized as a sorted array for a stable,
+ * diffable encoding -- insertion order in a `Set` would otherwise make
+ * two functionally-identical states encode differently.
  */
 function encodeState(state) {
-  const serializable = Object.assign({}, state, {
-    towns: state.towns ? Array.from(state.towns).sort() : null,
-  });
-  const json = JSON.stringify(serializable);
+  const json = JSON.stringify(toSerializable(state));
   return base64UrlEncode(json);
 }
 
 /**
  * The inverse of `encodeState` -- returns `null` (never throws) for a
  * hash that isn't valid base64/JSON, so a corrupted or hand-edited URL
- * degrades to "use the defaults" rather than a crash. `towns` is
- * restored to a `Set` (the shape every other function in this module
- * expects), matching `DEFAULT_FILTER_STATE.towns`'s own `null`-or-`Set`
+ * degrades to "use the defaults" rather than a crash. Every `SET_FIELDS`
+ * entry is restored to a `Set` (the shape every other function in this
+ * module expects), matching `DEFAULT_FILTER_STATE`'s own `null`-or-`Set`
  * convention in `filters.js`.
  */
 function decodeState(hash) {
   try {
     const json = base64UrlDecode(hash);
     const parsed = JSON.parse(json);
-    if (parsed.towns) {
-      parsed.towns = new Set(parsed.towns);
+    for (const field of SET_FIELDS) {
+      if (parsed[field]) {
+        parsed[field] = new Set(parsed[field]);
+      }
     }
     return parsed;
   } catch (err) {
@@ -70,10 +85,7 @@ function base64UrlDecode(encoded) {
  * is exactly reconstructible, byte-for-byte, from `decodeState` too.
  */
 function settingsToClipboardJson(state) {
-  const serializable = Object.assign({}, state, {
-    towns: state.towns ? Array.from(state.towns).sort() : null,
-  });
-  return JSON.stringify(serializable, null, 2);
+  return JSON.stringify(toSerializable(state), null, 2);
 }
 
 if (typeof module !== 'undefined') {
