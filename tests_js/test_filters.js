@@ -12,6 +12,7 @@ const {
   hasRealPermitHistory,
   materialsOf,
   roofCoverOf,
+  canopyFilterValue,
   UNKNOWN_MATERIAL,
   applyFilters,
   DEFAULT_FILTER_STATE,
@@ -213,6 +214,34 @@ test('applyFilters: job-size percentile range filter', () => {
   });
   const result = applyFilters(parcels, state, [], jobSize);
   assert.deepStrictEqual(result.map((p) => p.lead_key), ['big']);
+});
+
+test('canopyFilterValue: uses the raw percentage when present', () => {
+  assert.strictEqual(canopyFilterValue(parcel({ pct_tree_canopy_nearby: 65 })), 65);
+});
+
+test('canopyFilterValue: falls back to the canopy component (scaled to 0-100) when the raw percentage is absent (teaser rows)', () => {
+  const row = { components: { canopy: 0.7 } }; // no pct_tree_canopy_nearby at all
+  assert.strictEqual(canopyFilterValue(row), 70);
+});
+
+test('canopyFilterValue: null when neither is available', () => {
+  assert.strictEqual(canopyFilterValue({}), null);
+});
+
+test('applyFilters: canopy range filter works off the component for a teaser-shaped row with no raw percentage', () => {
+  const teaserRow = parcel({ lead_key: 'teaser-1', pct_tree_canopy_nearby: undefined, components: { canopy: 0.9 } });
+  delete teaserRow.pct_tree_canopy_nearby;
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    canopyMin: 80,
+    canopyMax: 100,
+    hideClaimed: false,
+    hideWorked: false,
+    hideMailed: false,
+    hideUnreachable: false,
+  });
+  const result = applyFilters([teaserRow], state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['teaser-1']);
 });
 
 run();

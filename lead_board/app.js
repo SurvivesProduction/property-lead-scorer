@@ -28,11 +28,31 @@
   const sortedAssessedValue = PARCELS.map((p) => p.assessed_value).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
   const sortedSaleYears = PARCELS.map((p) => p.last_sale_year).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
 
+  // A teaser row carries jobSize/saleRecency PRECOMPUTED server-side
+  // (scripts/build_lead_board.py's `build_teaser_data`, percentile rank
+  // against the share population) instead of the raw living_area_sqft/
+  // assessed_value/last_sale_year this function would otherwise need --
+  // those raw fields are stripped entirely from teaser rows specifically
+  // so no viewer can read them back out. Use the precomputed value
+  // whenever a row already has one; only fall back to computing it from
+  // raw fields (every other build) when it doesn't.
   const jobSizeByLeadKey = new Map();
   const saleRecencyByLeadKey = new Map();
   for (const p of PARCELS) {
-    jobSizeByLeadKey.set(p.lead_key, computeJobSizeComponent(p, sortedSqft, sortedAssessedValue));
-    saleRecencyByLeadKey.set(p.lead_key, computeSaleRecencyComponent(p, sortedSaleYears));
+    const precomputedJobSize = p.components && p.components.jobSize;
+    const precomputedSaleRecency = p.components && p.components.saleRecency;
+    jobSizeByLeadKey.set(
+      p.lead_key,
+      precomputedJobSize !== null && precomputedJobSize !== undefined
+        ? precomputedJobSize
+        : computeJobSizeComponent(p, sortedSqft, sortedAssessedValue)
+    );
+    saleRecencyByLeadKey.set(
+      p.lead_key,
+      precomputedSaleRecency !== null && precomputedSaleRecency !== undefined
+        ? precomputedSaleRecency
+        : computeSaleRecencyComponent(p, sortedSaleYears)
+    );
   }
 
   const DEFAULT_WEIGHTS = PRESETS.darren_default.weights;
@@ -267,6 +287,15 @@
     if (delta > 0) arrow = `<span class="rank-up">▲ ${delta}</span>`;
     else if (delta < 0) arrow = `<span class="rank-down">▼ ${Math.abs(delta)}</span>`;
 
+    // A teaser row's year_built is already the DECADE (e.g. 1700, not
+    // 1732) -- build_lead_board.py's build_teaser_data coarsens it for
+    // re-identification reasons (see that module's own docstring); show
+    // it as "1700s" rather than the bare, misleadingly-precise-looking
+    // "1700" a plain exact year would otherwise print as.
+    const yearLabel = lead.year_built
+      ? (DATA.metadata && DATA.metadata.year_built_granularity === 'decade' ? `${lead.year_built}s` : lead.year_built)
+      : '—';
+
     const stateOnlyBadge = lead.flags.is_state_only
       ? '<span class="badge badge-state-only">state data only, not verified</span>'
       : '';
@@ -301,7 +330,7 @@
           <span class="lead-rank">#${lead.rank}</span>
           <span class="lead-arrow">${arrow}</span>
           <span class="lead-town">${lead.town}</span>
-          <span class="lead-built">built ${lead.year_built || '—'}</span>
+          <span class="lead-built">built ${yearLabel}</span>
           ${stateOnlyBadge}
           <button type="button" class="expand-btn" data-key="${lead.lead_key}">details</button>
         </div>
@@ -400,8 +429,34 @@
     el('tagline').textContent = (DATA.metadata && DATA.metadata.tagline) || '';
   }
 
+  // Static, set once -- `sample_size`/`population_size` describe the
+  // WHOLE embedded dataset (e.g. teaser builds: top 250 of the share
+  // population), not something that changes as a viewer filters within
+  // it. `#result-count` (re-rendered on every filter/weight change)
+  // still shows the live "N leads match current filters" count among
+  // whatever sample is loaded.
+  function renderSampleBanner() {
+    const meta = DATA.metadata || {};
+    el('sample-banner').textContent =
+      meta.sample_size && meta.population_size
+        ? `Showing a sample of ${meta.sample_size} of ${meta.population_size} leads`
+        : '';
+  }
+
+  // Hide an entire filter section (not just its individual chips) when
+  // there's nothing real to filter on -- a teaser build strips siding_
+  // families/roof_family entirely, so materialsOf/roofCoverOf fall back
+  // to the single 'Unknown' bucket for every row; a lone "Unknown (250)"
+  // chip that can't narrow anything is worse than no filter at all.
+  function hideEmptyMaterialSections() {
+    if (ALL_SIDING_MATERIALS.length <= 1) el('siding-material-section').style.display = 'none';
+    if (ALL_ROOF_MATERIALS.length <= 1) el('roof-cover-section').style.display = 'none';
+  }
+
   initPanelOpenState();
   renderTagline();
+  renderSampleBanner();
+  hideEmptyMaterialSections();
   bindStaticControls();
   renderAll();
 })();

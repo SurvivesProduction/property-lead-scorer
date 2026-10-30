@@ -94,6 +94,8 @@
   #filter-summary { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
   #tagline { font-size: 12px; color: var(--accent); font-style: italic; margin-top: 2px; }
   #tagline:empty { display: none; }
+  #sample-banner { font-size: 12px; color: var(--muted); font-style: italic; margin-bottom: 4px; }
+  #sample-banner:empty { display: none; }
   details.panel { padding: 0; }
   details.panel > summary { list-style: none; cursor: pointer; padding: 16px; font-size: 14px; font-weight: 700; color: var(--ink); }
   details.panel > summary::-webkit-details-marker { display: none; }
@@ -149,6 +151,7 @@
       <button type="button" id="copy-settings">Copy settings</button>
       <span id="copy-status"></span>
     </div>
+    <div id="sample-banner"></div>
     <div id="result-count"></div>
     <div id="filter-summary"></div>
     <ul id="results-list"></ul>
@@ -166,10 +169,14 @@
     <summary>Towns &amp; filters</summary>
     <h2>Towns</h2>
     <div id="town-chips"></div>
-    <h2 style="margin-top:16px;">Siding material</h2>
-    <div id="siding-chips"></div>
-    <h2 style="margin-top:16px;">Roof cover</h2>
-    <div id="roof-chips"></div>
+    <div id="siding-material-section">
+      <h2 style="margin-top:16px;">Siding material</h2>
+      <div id="siding-chips"></div>
+    </div>
+    <div id="roof-cover-section">
+      <h2 style="margin-top:16px;">Roof cover</h2>
+      <div id="roof-chips"></div>
+    </div>
     <h2 style="margin-top:16px;">Filters</h2>
     <div class="filters-grid">
       <div><label for="year-min">Year built, min</label><input type="number" id="year-min" placeholder="any"></div>
@@ -453,6 +460,27 @@ function roofCoverOf(parcel) {
   return parcel.roof_family || UNKNOWN_MATERIAL;
 }
 
+/**
+ * The canopy RANGE filter's own basis -- the real `pct_tree_canopy_
+ * nearby` percentage when a row has it, or the `canopy` component
+ * (0-1 "bathtub curve" risk score, scaled to 0-100) when it doesn't
+ * (2026-10-30: a teaser row has no raw percentage at all, by design --
+ * see `build_lead_board.py`'s own module docstring). Not the same UNIT
+ * as a real percentage -- the component is a non-monotonic risk score,
+ * not tree cover -- but still a real, meaningfully-ordered 0-100 value
+ * to filter on, which is the whole point of "work off the components"
+ * for a build that has nothing else to offer.
+ */
+function canopyFilterValue(parcel) {
+  if (parcel.pct_tree_canopy_nearby !== null && parcel.pct_tree_canopy_nearby !== undefined) {
+    return parcel.pct_tree_canopy_nearby;
+  }
+  if (parcel.components && parcel.components.canopy !== null && parcel.components.canopy !== undefined) {
+    return parcel.components.canopy * 100;
+  }
+  return null;
+}
+
 function isClaimedTerritory(parcel, soldTowns) {
   const allowed = new Set(soldTowns.map((t) => t.toLowerCase()));
   return allowed.has((parcel.town || '').toLowerCase());
@@ -520,7 +548,7 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
     if (!inRange(parcel.year_built, filterState.yearBuiltMin, filterState.yearBuiltMax)) {
       return false;
     }
-    if (!inRange(parcel.pct_tree_canopy_nearby, filterState.canopyMin, filterState.canopyMax)) {
+    if (!inRange(canopyFilterValue(parcel), filterState.canopyMin, filterState.canopyMax)) {
       return false;
     }
     if (filterState.jobSizePctMin !== null || filterState.jobSizePctMax !== null) {
@@ -591,6 +619,7 @@ if (typeof module !== 'undefined') {
     hasRealPermitHistory,
     materialsOf,
     roofCoverOf,
+    canopyFilterValue,
     UNKNOWN_MATERIAL,
     inRange,
     applyFilters,
@@ -813,11 +842,31 @@ if (typeof module !== 'undefined') {
   const sortedAssessedValue = PARCELS.map((p) => p.assessed_value).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
   const sortedSaleYears = PARCELS.map((p) => p.last_sale_year).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
 
+  // A teaser row carries jobSize/saleRecency PRECOMPUTED server-side
+  // (scripts/build_lead_board.py's `build_teaser_data`, percentile rank
+  // against the share population) instead of the raw living_area_sqft/
+  // assessed_value/last_sale_year this function would otherwise need --
+  // those raw fields are stripped entirely from teaser rows specifically
+  // so no viewer can read them back out. Use the precomputed value
+  // whenever a row already has one; only fall back to computing it from
+  // raw fields (every other build) when it doesn't.
   const jobSizeByLeadKey = new Map();
   const saleRecencyByLeadKey = new Map();
   for (const p of PARCELS) {
-    jobSizeByLeadKey.set(p.lead_key, computeJobSizeComponent(p, sortedSqft, sortedAssessedValue));
-    saleRecencyByLeadKey.set(p.lead_key, computeSaleRecencyComponent(p, sortedSaleYears));
+    const precomputedJobSize = p.components && p.components.jobSize;
+    const precomputedSaleRecency = p.components && p.components.saleRecency;
+    jobSizeByLeadKey.set(
+      p.lead_key,
+      precomputedJobSize !== null && precomputedJobSize !== undefined
+        ? precomputedJobSize
+        : computeJobSizeComponent(p, sortedSqft, sortedAssessedValue)
+    );
+    saleRecencyByLeadKey.set(
+      p.lead_key,
+      precomputedSaleRecency !== null && precomputedSaleRecency !== undefined
+        ? precomputedSaleRecency
+        : computeSaleRecencyComponent(p, sortedSaleYears)
+    );
   }
 
   const DEFAULT_WEIGHTS = PRESETS.darren_default.weights;
@@ -1052,6 +1101,15 @@ if (typeof module !== 'undefined') {
     if (delta > 0) arrow = `<span class="rank-up">▲ ${delta}</span>`;
     else if (delta < 0) arrow = `<span class="rank-down">▼ ${Math.abs(delta)}</span>`;
 
+    // A teaser row's year_built is already the DECADE (e.g. 1700, not
+    // 1732) -- build_lead_board.py's build_teaser_data coarsens it for
+    // re-identification reasons (see that module's own docstring); show
+    // it as "1700s" rather than the bare, misleadingly-precise-looking
+    // "1700" a plain exact year would otherwise print as.
+    const yearLabel = lead.year_built
+      ? (DATA.metadata && DATA.metadata.year_built_granularity === 'decade' ? `${lead.year_built}s` : lead.year_built)
+      : '—';
+
     const stateOnlyBadge = lead.flags.is_state_only
       ? '<span class="badge badge-state-only">state data only, not verified</span>'
       : '';
@@ -1086,7 +1144,7 @@ if (typeof module !== 'undefined') {
           <span class="lead-rank">#${lead.rank}</span>
           <span class="lead-arrow">${arrow}</span>
           <span class="lead-town">${lead.town}</span>
-          <span class="lead-built">built ${lead.year_built || '—'}</span>
+          <span class="lead-built">built ${yearLabel}</span>
           ${stateOnlyBadge}
           <button type="button" class="expand-btn" data-key="${lead.lead_key}">details</button>
         </div>
@@ -1185,8 +1243,34 @@ if (typeof module !== 'undefined') {
     el('tagline').textContent = (DATA.metadata && DATA.metadata.tagline) || '';
   }
 
+  // Static, set once -- `sample_size`/`population_size` describe the
+  // WHOLE embedded dataset (e.g. teaser builds: top 250 of the share
+  // population), not something that changes as a viewer filters within
+  // it. `#result-count` (re-rendered on every filter/weight change)
+  // still shows the live "N leads match current filters" count among
+  // whatever sample is loaded.
+  function renderSampleBanner() {
+    const meta = DATA.metadata || {};
+    el('sample-banner').textContent =
+      meta.sample_size && meta.population_size
+        ? `Showing a sample of ${meta.sample_size} of ${meta.population_size} leads`
+        : '';
+  }
+
+  // Hide an entire filter section (not just its individual chips) when
+  // there's nothing real to filter on -- a teaser build strips siding_
+  // families/roof_family entirely, so materialsOf/roofCoverOf fall back
+  // to the single 'Unknown' bucket for every row; a lone "Unknown (250)"
+  // chip that can't narrow anything is worse than no filter at all.
+  function hideEmptyMaterialSections() {
+    if (ALL_SIDING_MATERIALS.length <= 1) el('siding-material-section').style.display = 'none';
+    if (ALL_ROOF_MATERIALS.length <= 1) el('roof-cover-section').style.display = 'none';
+  }
+
   initPanelOpenState();
   renderTagline();
+  renderSampleBanner();
+  hideEmptyMaterialSections();
   bindStaticControls();
   renderAll();
 })();

@@ -191,6 +191,28 @@ reach for is itself a signal for what to refine next.
     11/20 with Bigger Jobs (a genuinely different cut, not a near-copy).
     Regression-guarded against the real population in
     `property-lead-scorer-full/tests_js/test_preset_overlap.js`.
+  - **Components-only builds, 2026-10-30** (support added for the
+    `-full` repo's `--teaser` build, which strips every raw field down
+    to just town/decade/component scores -- see that repo's own README
+    for the full re-identification reasoning): `canopyFilterValue`
+    (`filters.js`) falls back to the `canopy` component (0-100 scaled)
+    when `pct_tree_canopy_nearby` is absent -- not the same UNIT as a
+    real percentage (the component is a non-monotonic risk score), but
+    still a real, meaningfully-ordered value to filter on when that's
+    all a build has. `app.js` hides the siding-material/roof-cover
+    filter SECTIONS entirely (not a lone useless "Unknown" chip) once
+    `materialsOf`/`roofCoverOf`'s own option list collapses to size <=1
+    -- i.e. there's genuinely nothing left to filter on. `jobSize`/
+    `saleRecency` read a row's own precomputed `components.jobSize`/
+    `.saleRecency` when present (a components-only build has no raw
+    sqft/dollar/year fields to compute them from client-side at all),
+    falling back to the usual client-side percentile computation
+    otherwise. A row's `year_built` renders with an "s" suffix
+    ("1700s") when `metadata.year_built_granularity === 'decade'`.
+    `#sample-banner` shows "Showing a sample of N of M leads" when
+    `metadata.sample_size`/`.population_size` are set (static, set once
+    -- unlike `#result-count`, which keeps reflecting the live filtered
+    count within whatever sample is loaded).
 - **`lead_board/state.js`** -- every slider/filter/toggle value round-
   trips through the URL hash (base64url-encoded JSON); "Copy settings"
   copies the same JSON to the clipboard.

@@ -45,6 +45,27 @@ function roofCoverOf(parcel) {
   return parcel.roof_family || UNKNOWN_MATERIAL;
 }
 
+/**
+ * The canopy RANGE filter's own basis -- the real `pct_tree_canopy_
+ * nearby` percentage when a row has it, or the `canopy` component
+ * (0-1 "bathtub curve" risk score, scaled to 0-100) when it doesn't
+ * (2026-10-30: a teaser row has no raw percentage at all, by design --
+ * see `build_lead_board.py`'s own module docstring). Not the same UNIT
+ * as a real percentage -- the component is a non-monotonic risk score,
+ * not tree cover -- but still a real, meaningfully-ordered 0-100 value
+ * to filter on, which is the whole point of "work off the components"
+ * for a build that has nothing else to offer.
+ */
+function canopyFilterValue(parcel) {
+  if (parcel.pct_tree_canopy_nearby !== null && parcel.pct_tree_canopy_nearby !== undefined) {
+    return parcel.pct_tree_canopy_nearby;
+  }
+  if (parcel.components && parcel.components.canopy !== null && parcel.components.canopy !== undefined) {
+    return parcel.components.canopy * 100;
+  }
+  return null;
+}
+
 function isClaimedTerritory(parcel, soldTowns) {
   const allowed = new Set(soldTowns.map((t) => t.toLowerCase()));
   return allowed.has((parcel.town || '').toLowerCase());
@@ -112,7 +133,7 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
     if (!inRange(parcel.year_built, filterState.yearBuiltMin, filterState.yearBuiltMax)) {
       return false;
     }
-    if (!inRange(parcel.pct_tree_canopy_nearby, filterState.canopyMin, filterState.canopyMax)) {
+    if (!inRange(canopyFilterValue(parcel), filterState.canopyMin, filterState.canopyMax)) {
       return false;
     }
     if (filterState.jobSizePctMin !== null || filterState.jobSizePctMax !== null) {
@@ -183,6 +204,7 @@ if (typeof module !== 'undefined') {
     hasRealPermitHistory,
     materialsOf,
     roofCoverOf,
+    canopyFilterValue,
     UNKNOWN_MATERIAL,
     inRange,
     applyFilters,
