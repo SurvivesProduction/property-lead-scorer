@@ -24,15 +24,44 @@ const PRESETS = {
       saleRecency: 0,
     },
   },
+  // **Siding-focused: property_weight dropped to 0, 2026-10-30
+  // follow-up.** The original version (property=0.30, siding=0.50)
+  // measured 19-20/20 overlap with Darren default against the real
+  // population -- not a bug in the weights, a structural fact about the
+  // two curves: `_durable_material_age_score` saturates to 1.0 for an
+  // old-enough durable-sided house, same ceiling `property_age_score`
+  // itself approaches for the exact same house -- so ANY property_weight
+  // > 0 keeps pinning the identical ancient-durable-sided properties at
+  // the top regardless of how heavily siding is weighted alongside it
+  // (confirmed directly: even siding_weight=1.0/property_weight=0.0
+  // alone still returns a 100%-durable-material top 20, not a single
+  // vinyl house -- vinyl's own curve caps at 0.60
+  // (`DEFAULT_SIDING_VINYL_MODERATE_HIGH_SCORE`), strictly below
+  // durable's 1.0 ceiling, so no linear reweighting of the real
+  // `score_property` components can ever surface a vinyl-sided house
+  // over a durable-sided one. A "Vinyl-era" preset, as literally
+  // proposed, is not buildable without a material filter under this
+  // project's current scoring formula.)
+  //
+  // Fix: drop `property` to 0 entirely (removes the ceiling-tie problem
+  // at its root) and add canopy (0.15, a second REAL differentiator
+  // independent of age) and job size (0.10, tiebreaks among otherwise-
+  // tied maxed-siding properties by square footage) so the ranking
+  // actually moves. Measured against the real population: 7/20 overlap
+  // with Darren default (target was <=14/20), 11/20 with Bigger Jobs
+  // (a different cut, not a near-duplicate of it) -- siding stays the
+  // single heaviest weight (0.70), preserving the preset's original
+  // intent ("lead with siding condition"), just without the age anchor
+  // that was silently overriding it.
   siding_focused: {
     label: 'Siding-focused',
-    description: 'Siding becomes the heaviest signal (0.50, up from 0.30) -- for a call where the crew wants to lead with "whose siding is visibly overdue" rather than "whose house is oldest." Property age stays second (0.30, down from 0.50) since it is still real evidence, just no longer the lead signal; canopy/storm unchanged.',
+    description: 'Siding is the dominant signal (0.70); property age is deliberately ZERO (it was silently pinning the same ancient-durable-sided houses at the top as the default weights -- durable siding\'s own curve saturates at the same ceiling property age does). Canopy (0.15) and job size (0.10) differentiate among otherwise-tied maxed-siding properties instead.',
     weights: {
-      property: 0.3,
+      property: 0,
       canopy: 0.15,
       storm: 0.05,
-      siding: 0.5,
-      jobSize: 0,
+      siding: 0.7,
+      jobSize: 0.1,
       saleRecency: 0,
     },
   },

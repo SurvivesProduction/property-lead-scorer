@@ -22,6 +22,10 @@ test('siding_focused: siding is the heaviest weight', () => {
   assert.ok(others.every((w) => w < weights.siding), 'siding must outweigh every other signal');
 });
 
+test('siding_focused: property weight is zero (2026-10-30 fix -- any property_weight > 0 re-pins the same ancient-durable-sided houses Darren default already surfaces, since durable siding saturates to the same 1.0 ceiling property age does)', () => {
+  assert.strictEqual(PRESETS.siding_focused.weights.property, 0);
+});
+
 test('bigger_jobs: jobSize is meaningful and property age still matters (both >= 0.25)', () => {
   const { weights } = PRESETS.bigger_jobs;
   assert.ok(weights.jobSize >= 0.25, 'jobSize should be a real, non-token weight');

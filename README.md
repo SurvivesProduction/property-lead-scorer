@@ -169,21 +169,62 @@ reach for is itself a signal for what to refine next.
     (neutral 0.5 when the raw material is unknown) regardless of the raw
     text's own sparsity.
 - **`lead_board/presets.js`** -- "Darren default" (the real config
-  weights), "Siding-focused" (siding becomes the heaviest signal),
+  weights), "Siding-focused" (siding is the heaviest weight, 0.70),
   "Bigger jobs" (job size becomes meaningful while property age still
   matters) -- see the file's own docstring for the exact numbers and why.
+  - **Siding-focused, 2026-10-30 fix**: the original version (property=
+    0.30, siding=0.50) measured 19-20/20 overlap with Darren default's
+    top 20 against the real population -- not a tuning miss, a
+    structural fact: `_durable_material_age_score` saturates to the SAME
+    1.0 ceiling `property_age_score` approaches for the same old house,
+    so any `property_weight > 0` keeps re-pinning the identical ancient-
+    durable-sided properties no matter how heavily siding is weighted
+    alongside it (confirmed directly: even `property_weight=0`/
+    `siding_weight=1.0` alone still returns a 100%-durable-material top
+    20, zero vinyl houses -- vinyl's own curve caps at 0.60, strictly
+    below durable's 1.0, so no linear reweighting of the real scoring
+    formula can ever surface a vinyl-sided house over a durable-sided
+    one). A literal "Vinyl-era" preset is therefore not buildable without
+    a material filter. Fixed by dropping `property_weight` to 0 and
+    adding canopy (0.15) + job size (0.10) as real differentiators:
+    measured 7/20 overlap with Darren default now (target was <=14/20),
+    11/20 with Bigger Jobs (a genuinely different cut, not a near-copy).
+    Regression-guarded against the real population in
+    `property-lead-scorer-full/tests_js/test_preset_overlap.js`.
 - **`lead_board/state.js`** -- every slider/filter/toggle value round-
   trips through the URL hash (base64url-encoded JSON); "Copy settings"
   copies the same JSON to the clipboard.
 - **`lead_board/template.html`** + **`lead_board/app.js`** -- the page
   skeleton (light/dark via `prefers-color-scheme` + a manual toggle,
-  mobile-responsive) and its DOM wiring. No raw field names or raw scores
-  in the main results list -- component bars and the two per-lead links
-  only appear once a row is expanded: **"View record card"** (the real
-  `source_url`, when present -- "No record link" otherwise, never a dead
-  button) and **"See it on the map"** (a Google Maps search link built
-  from address + town + "CT", `property-lead-scorer-full/scripts
-  /export_lead_board_data.py`'s `map_url` field -- omitted entirely, not
+  mobile-responsive) and its DOM wiring.
+  - **Layout, 2026-10-30**: the results list is the FIRST panel (with the
+    live count and a one-line always-visible filter summary above it);
+    Weights and Towns/Filters are collapsible `<details>` panels, open by
+    default on desktop and closed on phone (set once from the viewport
+    width at load, never fought by a viewer's own manual toggle).
+  - **Rank numbering, 2026-10-30 fix**: a row's `#N` and its rank-change
+    arrow are now both LOCAL to the current filter set -- `renderResults`
+    filters first, then ranks that same filtered subset twice (current
+    weights for the shown order, Darren default for the arrow's
+    baseline), so `#7` really means "7th among what's visible" and the
+    arrow means "moved within this same visible set." The old version
+    ranked the full 24,578-parcel population once, unfiltered, then
+    sliced -- `#4172` on a narrowed view, and an arrow comparing against
+    a baseline that included rows the viewer couldn't even see.
+  - **Theme toggle, 2026-10-30 fix**: the first click now always visibly
+    switches. The old handler checked only whether `data-theme` had been
+    explicitly set, not the EFFECTIVE current scheme -- a system-dark
+    visitor's first click set `data-theme="dark"` explicitly, the SAME
+    appearance already showing, a no-op that only became visible on the
+    second press. Fixed to read `prefers-color-scheme` as the fallback
+    when no explicit attribute is set yet.
+  - No raw field names or raw scores in the main results list --
+    component bars and the two per-lead links only appear once a row is
+    expanded: **"View record card"** (the real `source_url`, when
+    present -- "No record link" otherwise, never a dead button) and
+    **"See it on the map"** (a Google Maps search link built from
+    address + town + "CT", `property-lead-scorer-full/scripts
+    /export_lead_board_data.py`'s `map_url` field -- omitted entirely, not
   shown broken, for the handful of rows with no house-numbered address).
   The two are independent -- a row can have either, both, or neither.
 

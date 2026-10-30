@@ -35,10 +35,7 @@
     saleRecencyByLeadKey.set(p.lead_key, computeSaleRecencyComponent(p, sortedSaleYears));
   }
 
-  // ---- default ranking (for rank-change arrows), fixed for the session ----
   const DEFAULT_WEIGHTS = PRESETS.darren_default.weights;
-  const defaultRanked = rankLeads(PARCELS, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey);
-  const defaultRankByLeadKey = new Map(defaultRanked.map((lead) => [lead.lead_key, lead.rank]));
 
   // ---- live state ----
   let state = Object.assign({}, DEFAULT_FILTER_STATE, {
@@ -244,12 +241,26 @@
     });
 
     el('theme-toggle').addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      document.documentElement.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+      // Must read the EFFECTIVE current scheme, not just whether
+      // `data-theme` has been explicitly set -- a page that's never been
+      // toggled has no attribute at all and is rendering purely from
+      // `prefers-color-scheme`. Checking only the attribute meant a
+      // system-dark visitor's first click set `data-theme="dark"`
+      // explicitly, which is the SAME appearance already showing -- a
+      // no-op click that only became visible on the second press.
+      const explicit = document.documentElement.getAttribute('data-theme');
+      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const currentlyDark = explicit ? explicit === 'dark' : systemPrefersDark;
+      document.documentElement.setAttribute('data-theme', currentlyDark ? 'light' : 'dark');
     });
   }
 
-  function leadRowHtml(lead) {
+  function leadRowHtml(lead, defaultRankByLeadKey) {
+    // Both ranks are positions WITHIN THE SAME FILTERED SET (see
+    // renderResults) -- a lead's arrow answers "did the current weights
+    // move this lead up/down among what's visible right now," never "...
+    // among the whole 24,578-parcel population," which would be
+    // meaningless once a viewer has narrowed to one town or one material.
     const defaultRank = defaultRankByLeadKey.get(lead.lead_key);
     const delta = defaultRank - lead.rank; // positive = moved up
     let arrow = '<span class="rank-same">—</span>';
@@ -305,12 +316,56 @@
     return key.replace(/[^a-zA-Z0-9_-]/g, '_');
   }
 
+  /**
+   * One line, always visible above the results list, so a viewer never
+   * has to open the (now-collapsible) Filters panel just to see what's
+   * currently narrowing the list.
+   */
+  function summarizeFilters(state) {
+    const parts = [];
+    const hidden = [];
+    if (state.hideClaimed) hidden.push('claimed');
+    if (state.hideWorked) hidden.push('worked');
+    if (state.hideMailed) hidden.push('mailed/shown');
+    if (state.hideUnreachable) hidden.push('unreachable');
+    if (hidden.length) parts.push(`Hiding ${hidden.join(', ')}`);
+    if (state.showStateOnly) parts.push('showing state-data-only rows');
+    if (state.towns && state.towns.size) parts.push(`Towns: ${Array.from(state.towns).sort().join(', ')}`);
+    if (state.sidingMaterials && state.sidingMaterials.size) {
+      parts.push(`Siding: ${Array.from(state.sidingMaterials).map((f) => FAMILY_LABELS[f] || f).join(', ')}`);
+    }
+    if (state.roofCoverMaterials && state.roofCoverMaterials.size) {
+      parts.push(`Roof: ${Array.from(state.roofCoverMaterials).map((f) => FAMILY_LABELS[f] || f).join(', ')}`);
+    }
+    if (state.requireRealPermitHistory) parts.push('real permit history only');
+    if (state.yearBuiltMin != null || state.yearBuiltMax != null) {
+      parts.push(`Built ${state.yearBuiltMin ?? 'any'}–${state.yearBuiltMax ?? 'any'}`);
+    }
+    if (state.canopyMin != null || state.canopyMax != null) {
+      parts.push(`Canopy ${state.canopyMin ?? 'any'}–${state.canopyMax ?? 'any'}%`);
+    }
+    if (state.jobSizePctMin != null || state.jobSizePctMax != null) {
+      parts.push(`Job size pct ${state.jobSizePctMin ?? 'any'}–${state.jobSizePctMax ?? 'any'}`);
+    }
+    return parts.length ? parts.join(' · ') : 'No filters active';
+  }
+
   function renderResults() {
-    const ranked = rankLeads(PARCELS, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey);
-    const filtered = applyFilters(ranked, state, SOLD_TOWNS, jobSizeByLeadKey);
+    // Filter FIRST, then rank the filtered subset twice -- once at the
+    // current weights (drives both display order and the #1..#N shown
+    // on each row), once at Darren default (the arrow's baseline) --
+    // both over the SAME filtered population, so #7 really means
+    // "7th among what's visible," and the arrow means "moved within
+    // this same visible set," not a leftover global DB rank.
+    const filtered = applyFilters(PARCELS, state, SOLD_TOWNS, jobSizeByLeadKey);
+    const currentRanked = rankLeads(filtered, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey);
+    const defaultRankedSameFilters = rankLeads(filtered, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey);
+    const defaultRankByLeadKey = new Map(defaultRankedSameFilters.map((lead) => [lead.lead_key, lead.rank]));
+
     el('result-count').textContent = `${filtered.length} leads match current filters`;
-    const top = filtered.slice(0, state.topN);
-    el('results-list').innerHTML = top.map(leadRowHtml).join('');
+    el('filter-summary').textContent = summarizeFilters(state);
+    const top = currentRanked.slice(0, state.topN);
+    el('results-list').innerHTML = top.map((lead) => leadRowHtml(lead, defaultRankByLeadKey)).join('');
     Array.from(el('results-list').querySelectorAll('.expand-btn')).forEach((btn) => {
       btn.addEventListener('click', () => {
         const detail = el('detail-' + cssSafe(btn.getAttribute('data-key')));
@@ -329,6 +384,24 @@
     syncHash();
   }
 
+  // Set the Weights/Filters panels' initial open/closed state ONCE, from
+  // the viewport width at load (same 480px breakpoint the CSS mobile
+  // layout already uses) -- open on desktop, closed on phone so the
+  // results list is the first thing a crew sees on a small screen.
+  // Deliberately not re-evaluated on resize or on every render: that
+  // would fight a viewer's own manual expand/collapse click.
+  function initPanelOpenState() {
+    const isDesktop = window.innerWidth > 480;
+    el('weights-details').open = isDesktop;
+    el('filters-details').open = isDesktop;
+  }
+
+  function renderTagline() {
+    el('tagline').textContent = (DATA.metadata && DATA.metadata.tagline) || '';
+  }
+
+  initPanelOpenState();
+  renderTagline();
   bindStaticControls();
   renderAll();
 })();

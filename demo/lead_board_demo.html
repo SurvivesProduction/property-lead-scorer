@@ -90,7 +90,17 @@
   .filters-grid input[type=number] { width: 100%; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--ink); }
   .toggles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; margin-top: 10px; font-size: 13px; }
   .toggles label { display: flex; align-items: center; gap: 6px; }
-  #result-count { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  #result-count { font-size: 13px; color: var(--muted); margin-bottom: 2px; }
+  #filter-summary { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  #tagline { font-size: 12px; color: var(--accent); font-style: italic; margin-top: 2px; }
+  #tagline:empty { display: none; }
+  details.panel { padding: 0; }
+  details.panel > summary { list-style: none; cursor: pointer; padding: 16px; font-size: 14px; font-weight: 700; color: var(--ink); }
+  details.panel > summary::-webkit-details-marker { display: none; }
+  details.panel > summary::before { content: '▸ '; color: var(--muted); }
+  details.panel[open] > summary::before { content: '▾ '; }
+  details.panel > summary ~ * { padding-left: 16px; padding-right: 16px; }
+  details.panel > summary ~ *:last-child { padding-bottom: 16px; }
   #results-list { list-style: none; margin: 0; padding: 0; }
   .lead-row { border-bottom: 1px solid var(--border); padding: 10px 0; }
   .lead-row-main { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -123,18 +133,37 @@
     <div>
       <h1>Quiet Corner Lead Board</h1>
       <div class="subtitle">North East Corner Construction &middot; drag a slider, flip a filter &mdash; the ranking re-sorts live, right here in the browser.</div>
+      <div id="tagline"></div>
     </div>
     <button type="button" id="theme-toggle">Toggle theme</button>
   </header>
 
   <div class="panel">
+    <div class="toolbar">
+      <label for="top-n" style="font-size:13px;">Show top</label>
+      <select id="top-n">
+        <option value="20">20</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+      </select>
+      <button type="button" id="copy-settings">Copy settings</button>
+      <span id="copy-status"></span>
+    </div>
+    <div id="result-count"></div>
+    <div id="filter-summary"></div>
+    <ul id="results-list"></ul>
+  </div>
+
+  <details class="panel" id="weights-details">
+    <summary>Weights &amp; presets</summary>
     <h2>Weights</h2>
     <div id="weight-sliders"></div>
     <h2 style="margin-top:16px;">Presets</h2>
     <div id="preset-buttons"></div>
-  </div>
+  </details>
 
-  <div class="panel">
+  <details class="panel" id="filters-details">
+    <summary>Towns &amp; filters</summary>
     <h2>Towns</h2>
     <div id="town-chips"></div>
     <h2 style="margin-top:16px;">Siding material</h2>
@@ -162,22 +191,7 @@
       <label><input type="checkbox" id="toggle-unreachable"> Hide unreachable (absentee/delinquent)</label>
       <label id="toggle-state-only-row"><input type="checkbox" id="toggle-state-only"> Show state-data-only rows</label>
     </div>
-  </div>
-
-  <div class="panel">
-    <div class="toolbar">
-      <label for="top-n" style="font-size:13px;">Show top</label>
-      <select id="top-n">
-        <option value="20">20</option>
-        <option value="50">50</option>
-        <option value="100">100</option>
-      </select>
-      <button type="button" id="copy-settings">Copy settings</button>
-      <span id="copy-status"></span>
-    </div>
-    <div id="result-count"></div>
-    <ul id="results-list"></ul>
-  </div>
+  </details>
 </div>
 
 <script>
@@ -612,15 +626,44 @@ const PRESETS = {
       saleRecency: 0,
     },
   },
+  // **Siding-focused: property_weight dropped to 0, 2026-10-30
+  // follow-up.** The original version (property=0.30, siding=0.50)
+  // measured 19-20/20 overlap with Darren default against the real
+  // population -- not a bug in the weights, a structural fact about the
+  // two curves: `_durable_material_age_score` saturates to 1.0 for an
+  // old-enough durable-sided house, same ceiling `property_age_score`
+  // itself approaches for the exact same house -- so ANY property_weight
+  // > 0 keeps pinning the identical ancient-durable-sided properties at
+  // the top regardless of how heavily siding is weighted alongside it
+  // (confirmed directly: even siding_weight=1.0/property_weight=0.0
+  // alone still returns a 100%-durable-material top 20, not a single
+  // vinyl house -- vinyl's own curve caps at 0.60
+  // (`DEFAULT_SIDING_VINYL_MODERATE_HIGH_SCORE`), strictly below
+  // durable's 1.0 ceiling, so no linear reweighting of the real
+  // `score_property` components can ever surface a vinyl-sided house
+  // over a durable-sided one. A "Vinyl-era" preset, as literally
+  // proposed, is not buildable without a material filter under this
+  // project's current scoring formula.)
+  //
+  // Fix: drop `property` to 0 entirely (removes the ceiling-tie problem
+  // at its root) and add canopy (0.15, a second REAL differentiator
+  // independent of age) and job size (0.10, tiebreaks among otherwise-
+  // tied maxed-siding properties by square footage) so the ranking
+  // actually moves. Measured against the real population: 7/20 overlap
+  // with Darren default (target was <=14/20), 11/20 with Bigger Jobs
+  // (a different cut, not a near-duplicate of it) -- siding stays the
+  // single heaviest weight (0.70), preserving the preset's original
+  // intent ("lead with siding condition"), just without the age anchor
+  // that was silently overriding it.
   siding_focused: {
     label: 'Siding-focused',
-    description: 'Siding becomes the heaviest signal (0.50, up from 0.30) -- for a call where the crew wants to lead with "whose siding is visibly overdue" rather than "whose house is oldest." Property age stays second (0.30, down from 0.50) since it is still real evidence, just no longer the lead signal; canopy/storm unchanged.',
+    description: 'Siding is the dominant signal (0.70); property age is deliberately ZERO (it was silently pinning the same ancient-durable-sided houses at the top as the default weights -- durable siding\'s own curve saturates at the same ceiling property age does). Canopy (0.15) and job size (0.10) differentiate among otherwise-tied maxed-siding properties instead.',
     weights: {
-      property: 0.3,
+      property: 0,
       canopy: 0.15,
       storm: 0.05,
-      siding: 0.5,
-      jobSize: 0,
+      siding: 0.7,
+      jobSize: 0.1,
       saleRecency: 0,
     },
   },
@@ -777,10 +820,7 @@ if (typeof module !== 'undefined') {
     saleRecencyByLeadKey.set(p.lead_key, computeSaleRecencyComponent(p, sortedSaleYears));
   }
 
-  // ---- default ranking (for rank-change arrows), fixed for the session ----
   const DEFAULT_WEIGHTS = PRESETS.darren_default.weights;
-  const defaultRanked = rankLeads(PARCELS, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey);
-  const defaultRankByLeadKey = new Map(defaultRanked.map((lead) => [lead.lead_key, lead.rank]));
 
   // ---- live state ----
   let state = Object.assign({}, DEFAULT_FILTER_STATE, {
@@ -986,12 +1026,26 @@ if (typeof module !== 'undefined') {
     });
 
     el('theme-toggle').addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme');
-      document.documentElement.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+      // Must read the EFFECTIVE current scheme, not just whether
+      // `data-theme` has been explicitly set -- a page that's never been
+      // toggled has no attribute at all and is rendering purely from
+      // `prefers-color-scheme`. Checking only the attribute meant a
+      // system-dark visitor's first click set `data-theme="dark"`
+      // explicitly, which is the SAME appearance already showing -- a
+      // no-op click that only became visible on the second press.
+      const explicit = document.documentElement.getAttribute('data-theme');
+      const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const currentlyDark = explicit ? explicit === 'dark' : systemPrefersDark;
+      document.documentElement.setAttribute('data-theme', currentlyDark ? 'light' : 'dark');
     });
   }
 
-  function leadRowHtml(lead) {
+  function leadRowHtml(lead, defaultRankByLeadKey) {
+    // Both ranks are positions WITHIN THE SAME FILTERED SET (see
+    // renderResults) -- a lead's arrow answers "did the current weights
+    // move this lead up/down among what's visible right now," never "...
+    // among the whole 24,578-parcel population," which would be
+    // meaningless once a viewer has narrowed to one town or one material.
     const defaultRank = defaultRankByLeadKey.get(lead.lead_key);
     const delta = defaultRank - lead.rank; // positive = moved up
     let arrow = '<span class="rank-same">—</span>';
@@ -1047,12 +1101,56 @@ if (typeof module !== 'undefined') {
     return key.replace(/[^a-zA-Z0-9_-]/g, '_');
   }
 
+  /**
+   * One line, always visible above the results list, so a viewer never
+   * has to open the (now-collapsible) Filters panel just to see what's
+   * currently narrowing the list.
+   */
+  function summarizeFilters(state) {
+    const parts = [];
+    const hidden = [];
+    if (state.hideClaimed) hidden.push('claimed');
+    if (state.hideWorked) hidden.push('worked');
+    if (state.hideMailed) hidden.push('mailed/shown');
+    if (state.hideUnreachable) hidden.push('unreachable');
+    if (hidden.length) parts.push(`Hiding ${hidden.join(', ')}`);
+    if (state.showStateOnly) parts.push('showing state-data-only rows');
+    if (state.towns && state.towns.size) parts.push(`Towns: ${Array.from(state.towns).sort().join(', ')}`);
+    if (state.sidingMaterials && state.sidingMaterials.size) {
+      parts.push(`Siding: ${Array.from(state.sidingMaterials).map((f) => FAMILY_LABELS[f] || f).join(', ')}`);
+    }
+    if (state.roofCoverMaterials && state.roofCoverMaterials.size) {
+      parts.push(`Roof: ${Array.from(state.roofCoverMaterials).map((f) => FAMILY_LABELS[f] || f).join(', ')}`);
+    }
+    if (state.requireRealPermitHistory) parts.push('real permit history only');
+    if (state.yearBuiltMin != null || state.yearBuiltMax != null) {
+      parts.push(`Built ${state.yearBuiltMin ?? 'any'}–${state.yearBuiltMax ?? 'any'}`);
+    }
+    if (state.canopyMin != null || state.canopyMax != null) {
+      parts.push(`Canopy ${state.canopyMin ?? 'any'}–${state.canopyMax ?? 'any'}%`);
+    }
+    if (state.jobSizePctMin != null || state.jobSizePctMax != null) {
+      parts.push(`Job size pct ${state.jobSizePctMin ?? 'any'}–${state.jobSizePctMax ?? 'any'}`);
+    }
+    return parts.length ? parts.join(' · ') : 'No filters active';
+  }
+
   function renderResults() {
-    const ranked = rankLeads(PARCELS, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey);
-    const filtered = applyFilters(ranked, state, SOLD_TOWNS, jobSizeByLeadKey);
+    // Filter FIRST, then rank the filtered subset twice -- once at the
+    // current weights (drives both display order and the #1..#N shown
+    // on each row), once at Darren default (the arrow's baseline) --
+    // both over the SAME filtered population, so #7 really means
+    // "7th among what's visible," and the arrow means "moved within
+    // this same visible set," not a leftover global DB rank.
+    const filtered = applyFilters(PARCELS, state, SOLD_TOWNS, jobSizeByLeadKey);
+    const currentRanked = rankLeads(filtered, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey);
+    const defaultRankedSameFilters = rankLeads(filtered, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey);
+    const defaultRankByLeadKey = new Map(defaultRankedSameFilters.map((lead) => [lead.lead_key, lead.rank]));
+
     el('result-count').textContent = `${filtered.length} leads match current filters`;
-    const top = filtered.slice(0, state.topN);
-    el('results-list').innerHTML = top.map(leadRowHtml).join('');
+    el('filter-summary').textContent = summarizeFilters(state);
+    const top = currentRanked.slice(0, state.topN);
+    el('results-list').innerHTML = top.map((lead) => leadRowHtml(lead, defaultRankByLeadKey)).join('');
     Array.from(el('results-list').querySelectorAll('.expand-btn')).forEach((btn) => {
       btn.addEventListener('click', () => {
         const detail = el('detail-' + cssSafe(btn.getAttribute('data-key')));
@@ -1071,6 +1169,24 @@ if (typeof module !== 'undefined') {
     syncHash();
   }
 
+  // Set the Weights/Filters panels' initial open/closed state ONCE, from
+  // the viewport width at load (same 480px breakpoint the CSS mobile
+  // layout already uses) -- open on desktop, closed on phone so the
+  // results list is the first thing a crew sees on a small screen.
+  // Deliberately not re-evaluated on resize or on every render: that
+  // would fight a viewer's own manual expand/collapse click.
+  function initPanelOpenState() {
+    const isDesktop = window.innerWidth > 480;
+    el('weights-details').open = isDesktop;
+    el('filters-details').open = isDesktop;
+  }
+
+  function renderTagline() {
+    el('tagline').textContent = (DATA.metadata && DATA.metadata.tagline) || '';
+  }
+
+  initPanelOpenState();
+  renderTagline();
   bindStaticControls();
   renderAll();
 })();
