@@ -213,6 +213,18 @@ reach for is itself a signal for what to refine next.
     `metadata.sample_size`/`.population_size` are set (static, set once
     -- unlike `#result-count`, which keeps reflecting the live filtered
     count within whatever sample is loaded).
+  - **Teaser-only UI gate, 2026-10-30 polish follow-up** (`IS_TEASER`,
+    read from `metadata.is_teaser`, set only by the `-full` repo's
+    `--teaser` build -- a no-op for every other build): the teaser build
+    now applies all five default exclusions (claimed/worked/mailed/
+    unreachable/state-only) server-side before sampling even runs, so
+    the corresponding ops toggles (`#toggle-claimed-row` etc., ids added
+    to `template.html`) have nothing left to do -- `applyTeaserUiAdjust
+    ments` hides those four `<label>` rows entirely, and `summarizeFilters`
+    swaps the dynamic "Hiding ..." line for one static line built from
+    `SOLD_TOWNS` ("Ashford, Killingly, Woodstock: territory already
+    claimed."). See the full repo's own README/ARCHITECTURE.md section
+    24e for the full before/after (visibility, town-mix cap, branding).
 - **`lead_board/state.js`** -- every slider/filter/toggle value round-
   trips through the URL hash (base64url-encoded JSON); "Copy settings"
   copies the same JSON to the clipboard.

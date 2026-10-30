@@ -15,6 +15,11 @@
   const SOLD_TOWNS = DATA.metadata.sold_towns || [];
   const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
 
+  // Set only by `build_lead_board.py`'s `--teaser` build (2026-10-30
+  // visibility/polish follow-up) -- real/share never set this, so every
+  // branch below is a no-op for them (identical to today's behavior).
+  const IS_TEASER = Boolean(DATA.metadata && DATA.metadata.is_teaser);
+
   // 'Unknown' is included automatically whenever any parcel lacks the
   // field -- materialsOf/roofCoverOf (filters.js) both bucket missing
   // data there, so it's always a real, selectable option rather than a
@@ -352,13 +357,25 @@
    */
   function summarizeFilters(state) {
     const parts = [];
-    const hidden = [];
-    if (state.hideClaimed) hidden.push('claimed');
-    if (state.hideWorked) hidden.push('worked');
-    if (state.hideMailed) hidden.push('mailed/shown');
-    if (state.hideUnreachable) hidden.push('unreachable');
-    if (hidden.length) parts.push(`Hiding ${hidden.join(', ')}`);
-    if (state.showStateOnly) parts.push('showing state-data-only rows');
+    if (IS_TEASER) {
+      // Every default exclusion (claimed/worked/mailed/unreachable/
+      // state-only) is already applied SERVER-SIDE before the 250 rows
+      // are even selected (see build_lead_board.py's build_teaser_data)
+      // -- the ops toggles themselves are hidden too (see
+      // applyTeaserUiAdjustments below), so there's nothing live left to
+      // summarize here. One static, always-true fact replaces it.
+      if (SOLD_TOWNS.length) {
+        parts.push(`${SOLD_TOWNS.slice().sort().join(', ')}: territory already claimed.`);
+      }
+    } else {
+      const hidden = [];
+      if (state.hideClaimed) hidden.push('claimed');
+      if (state.hideWorked) hidden.push('worked');
+      if (state.hideMailed) hidden.push('mailed/shown');
+      if (state.hideUnreachable) hidden.push('unreachable');
+      if (hidden.length) parts.push(`Hiding ${hidden.join(', ')}`);
+      if (state.showStateOnly) parts.push('showing state-data-only rows');
+    }
     if (state.towns && state.towns.size) parts.push(`Towns: ${Array.from(state.towns).sort().join(', ')}`);
     if (state.sidingMaterials && state.sidingMaterials.size) {
       parts.push(`Siding: ${Array.from(state.sidingMaterials).map((f) => FAMILY_LABELS[f] || f).join(', ')}`);
@@ -453,10 +470,28 @@
     if (ALL_ROOF_MATERIALS.length <= 1) el('roof-cover-section').style.display = 'none';
   }
 
+  // Teaser-only: the ops-exclusion toggles are meaningless once every
+  // default exclusion they represent has already been applied server-
+  // side before the 250 rows were even sampled (see build_lead_board
+  // .py's _is_teaser_excluded) -- hide the rows entirely rather than
+  // leave four do-nothing checkboxes in the Filters panel. Only the
+  // wrapping <label> ROW is hidden -- the <input> itself stays in the
+  // DOM (unused, un-rendered), so renderControls()'s `.checked =`
+  // assignments and bindStaticControls()'s listeners still have a live
+  // element to target; no null-guards needed there.
+  function applyTeaserUiAdjustments() {
+    if (!IS_TEASER) return;
+    ['toggle-claimed-row', 'toggle-worked-row', 'toggle-mailed-row', 'toggle-unreachable-row'].forEach((id) => {
+      const row = el(id);
+      if (row) row.style.display = 'none';
+    });
+  }
+
   initPanelOpenState();
   renderTagline();
   renderSampleBanner();
   hideEmptyMaterialSections();
+  applyTeaserUiAdjustments();
   bindStaticControls();
   renderAll();
 })();
