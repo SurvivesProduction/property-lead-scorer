@@ -99,6 +99,36 @@ def run() -> int:
         else:
             print("PASS: a row with no source_url shows 'No record link' instead of a dead button.")
 
+        # --- map link: row 4 (Mapleford) has both a record card and a
+        #     usable address; row 3 (Fakington, hidden by default, has
+        #     neither source_url nor a house-numbered address) must show
+        #     neither link once visible -- not a broken map link. ---
+        row4 = page.locator(".lead-row[data-lead-key='Mapleford:4']")
+        row4.locator(".expand-btn").click()
+        page.wait_for_timeout(50)
+        if row4.locator("a.verify-link:has-text('View record card')").count() == 0:
+            failures.append("Row Mapleford:4 missing the 'View record card' link.")
+        else:
+            print("PASS: 'View record card' link present where source_url exists.")
+        if row4.locator("a.verify-link:has-text('See it on the map')").count() == 0:
+            failures.append("Row Mapleford:4 missing the 'See it on the map' link.")
+        else:
+            print("PASS: 'See it on the map' link present for a usable address.")
+
+        page.uncheck("#toggle-claimed")
+        page.wait_for_timeout(50)
+        row3 = page.locator(".lead-row[data-lead-key='Fakington:3']")
+        row3.locator(".expand-btn").click()
+        page.wait_for_timeout(50)
+        if row3.locator("a.verify-link:has-text('See it on the map')").count() != 0:
+            failures.append("Row Fakington:3 (no house-numbered address) should show no map link at all.")
+        else:
+            print("PASS: a row with no usable address shows no map link (not a broken one).")
+        if row3.locator(".verify-link-none:has-text('No record link')").count() == 0:
+            failures.append("Row Fakington:3 should still show 'No record link' for its missing source_url.")
+        else:
+            print("PASS: the same no-address row still shows 'No record link' for source_url independently.")
+
         # --- 3. apply a filter: show state-only rows (count should grow) ---
         page.reload()
         page.wait_for_selector("#result-count", timeout=60000)

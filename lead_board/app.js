@@ -259,9 +259,16 @@
     const stateOnlyBadge = lead.flags.is_state_only
       ? '<span class="badge badge-state-only">state data only, not verified</span>'
       : '';
-    const verifyLink = lead.source_url
-      ? `<a href="${lead.source_url}" target="_blank" rel="noopener" class="verify-link">Verify this property</a>`
+    const recordLink = lead.source_url
+      ? `<a href="${lead.source_url}" target="_blank" rel="noopener" class="verify-link">View record card</a>`
       : '<span class="verify-link verify-link-none">No record link</span>';
+    // No placeholder when there's no usable address (see export_lead_
+    // board_data.py's own `_map_url` docstring) -- omitted cleanly,
+    // same "neither link, not a broken one" rule a missing source_url
+    // does NOT get (that one still shows an explicit "No record link").
+    const mapLink = lead.map_url
+      ? `<a href="${lead.map_url}" target="_blank" rel="noopener" class="verify-link">See it on the map</a>`
+      : '';
 
     const components = lead._components || {};
     const COMPONENT_LABELS = {
@@ -289,7 +296,7 @@
         </div>
         <div class="lead-row-detail" id="detail-${cssSafe(lead.lead_key)}" hidden>
           ${bars}
-          ${verifyLink}
+          <div class="link-row">${recordLink}${mapLink}</div>
         </div>
       </li>`;
   }

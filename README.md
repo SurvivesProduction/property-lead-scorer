@@ -178,8 +178,14 @@ reach for is itself a signal for what to refine next.
 - **`lead_board/template.html`** + **`lead_board/app.js`** -- the page
   skeleton (light/dark via `prefers-color-scheme` + a manual toggle,
   mobile-responsive) and its DOM wiring. No raw field names or raw scores
-  in the main results list -- component bars and the raw `source_url`
-  verify-link only appear once a row is expanded.
+  in the main results list -- component bars and the two per-lead links
+  only appear once a row is expanded: **"View record card"** (the real
+  `source_url`, when present -- "No record link" otherwise, never a dead
+  button) and **"See it on the map"** (a Google Maps search link built
+  from address + town + "CT", `property-lead-scorer-full/scripts
+  /export_lead_board_data.py`'s `map_url` field -- omitted entirely, not
+  shown broken, for the handful of rows with no house-numbered address).
+  The two are independent -- a row can have either, both, or neither.
 
 `scripts/build_demo_board.py` inlines the template + JS modules + a fully
 synthetic fixture (fake towns/streets, covering a claimed town, a

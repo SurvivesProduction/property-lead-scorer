@@ -24,11 +24,25 @@ import re
 import sys
 from pathlib import Path
 
+from urllib.parse import quote_plus
+
 from extscorer.normalize.materials import classify_roof_material, wall_material_families
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _LEAD_BOARD_DIR = _REPO_ROOT / "lead_board"
 _OUT_PATH = _REPO_ROOT / "demo" / "lead_board_demo.html"
+
+_HOUSE_NUMBER_RE = re.compile(r"^\s*\d")
+
+
+def _map_url(address: str, town: str) -> str | None:
+    # Mirrors property-lead-scorer-full/scripts/export_lead_board_data
+    # .py's `_map_url` -- deliberately duplicated rather than shared (a
+    # single regex + string-join, not a keyword mapping at drift risk).
+    if not address or not _HOUSE_NUMBER_RE.match(address):
+        return None
+    query = f"{address}, {town}, CT"
+    return f"https://www.google.com/maps/search/?api=1&query={quote_plus(query)}"
 
 
 def _lead(
@@ -86,6 +100,7 @@ def _lead(
         "assessed_value": assessed_value,
         "last_sale_year": last_sale_year,
         "source_url": source_url,
+        "map_url": _map_url(address, town),
         "components": {"property": property_c, "canopy": canopy_c, "storm": storm_c, "siding": siding_c},
         "lead_score": lead_score,
         "flags": {
@@ -112,7 +127,10 @@ def build_demo_data() -> dict:
             source_url="https://example.invalid/Parcel.aspx?pid=2",
             siding_materials=["Vinyl"], roof_cover_material="Asphalt Shingle",
         ),
-        _lead("3", "Fakington", "3 Example Rd", 1965, 0.3, 0.5, siding_c=0.2, last_sale_year=None),
+        # No house number -- demonstrates the "no usable address, no map
+        # link" case (real-world equivalent: 2 of 24,578 real rows,
+        # 2026-10-29, e.g. "ARNOLD LN").
+        _lead("3", "Fakington", "Example Rd", 1965, 0.3, 0.5, siding_c=0.2, last_sale_year=None),
         _lead(
             "4", "Mapleford", "4 Fictional Ave", 1900, 0.8, 0.6, siding_c=0.85,
             permit_data_available=True, permit_history_short=False,
