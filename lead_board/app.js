@@ -203,10 +203,12 @@
 
     refreshChips();
 
+    // __TEASER_STRIP_START__
     el('toggle-claimed').checked = state.hideClaimed;
     el('toggle-worked').checked = state.hideWorked;
     el('toggle-mailed').checked = state.hideMailed;
     el('toggle-unreachable').checked = state.hideUnreachable;
+    // __TEASER_STRIP_END__
     el('toggle-state-only').checked = state.showStateOnly;
     el('toggle-permit-history').checked = state.requireRealPermitHistory;
     // The toggle hides itself when the embedded dataset carries no
@@ -231,10 +233,12 @@
   }
 
   function bindStaticControls() {
+    // __TEASER_STRIP_START__
     el('toggle-claimed').addEventListener('change', (e) => { state.hideClaimed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-worked').addEventListener('change', (e) => { state.hideWorked = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-mailed').addEventListener('change', (e) => { state.hideMailed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-unreachable').addEventListener('change', (e) => { state.hideUnreachable = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    // __TEASER_STRIP_END__
     el('toggle-state-only').addEventListener('change', (e) => { state.showStateOnly = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-permit-history').addEventListener('change', (e) => { state.requireRealPermitHistory = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('top-n').addEventListener('change', (e) => { state.topN = parseInt(e.target.value, 10); renderResults(); syncHash(); });
@@ -358,22 +362,27 @@
   function summarizeFilters(state) {
     const parts = [];
     if (IS_TEASER) {
-      // Every default exclusion (claimed/worked/mailed/unreachable/
+      // __TEASER_STRIP_START__
+      // Every default exclusion (claimed/worked/contacted/unreachable/
       // state-only) is already applied SERVER-SIDE before the 250 rows
       // are even selected (see build_lead_board.py's build_teaser_data)
-      // -- the ops toggles themselves are hidden too (see
-      // applyTeaserUiAdjustments below), so there's nothing live left to
-      // summarize here. One static, always-true fact replaces it.
+      // -- the ops toggles themselves are omitted from this build too
+      // (see the public repo's template.html/app.js), so there's nothing
+      // live left to summarize here. One static, always-true fact
+      // replaces it.
+      // __TEASER_STRIP_END__
       if (SOLD_TOWNS.length) {
         parts.push(`${SOLD_TOWNS.slice().sort().join(', ')}: territory already claimed.`);
       }
     } else {
+      // __TEASER_STRIP_START__
       const hidden = [];
       if (state.hideClaimed) hidden.push('claimed');
       if (state.hideWorked) hidden.push('worked');
       if (state.hideMailed) hidden.push('mailed/shown');
       if (state.hideUnreachable) hidden.push('unreachable');
       if (hidden.length) parts.push(`Hiding ${hidden.join(', ')}`);
+      // __TEASER_STRIP_END__
       if (state.showStateOnly) parts.push('showing state-data-only rows');
     }
     if (state.towns && state.towns.size) parts.push(`Towns: ${Array.from(state.towns).sort().join(', ')}`);
@@ -470,28 +479,10 @@
     if (ALL_ROOF_MATERIALS.length <= 1) el('roof-cover-section').style.display = 'none';
   }
 
-  // Teaser-only: the ops-exclusion toggles are meaningless once every
-  // default exclusion they represent has already been applied server-
-  // side before the 250 rows were even sampled (see build_lead_board
-  // .py's _is_teaser_excluded) -- hide the rows entirely rather than
-  // leave four do-nothing checkboxes in the Filters panel. Only the
-  // wrapping <label> ROW is hidden -- the <input> itself stays in the
-  // DOM (unused, un-rendered), so renderControls()'s `.checked =`
-  // assignments and bindStaticControls()'s listeners still have a live
-  // element to target; no null-guards needed there.
-  function applyTeaserUiAdjustments() {
-    if (!IS_TEASER) return;
-    ['toggle-claimed-row', 'toggle-worked-row', 'toggle-mailed-row', 'toggle-unreachable-row'].forEach((id) => {
-      const row = el(id);
-      if (row) row.style.display = 'none';
-    });
-  }
-
   initPanelOpenState();
   renderTagline();
   renderSampleBanner();
   hideEmptyMaterialSections();
-  applyTeaserUiAdjustments();
   bindStaticControls();
   renderAll();
 })();

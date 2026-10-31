@@ -71,6 +71,7 @@ function isClaimedTerritory(parcel, soldTowns) {
   return allowed.has((parcel.town || '').toLowerCase());
 }
 
+// __TEASER_STRIP_START__
 function isWorked(parcel) {
   // No pipeline row at all means unworked, same as a 'new' row -- only a
   // non-'new' status counts as worked. See Prompt W's follow-up addendum:
@@ -88,6 +89,7 @@ function isMailedOrShown(parcel) {
 function isUnreachable(parcel) {
   return Boolean(parcel.flags.is_absentee) || Boolean(parcel.flags.is_delinquent);
 }
+// __TEASER_STRIP_END__
 
 function isStateOnly(parcel) {
   return Boolean(parcel.flags.is_state_only);
@@ -157,6 +159,7 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
     if (filterState.requireRealPermitHistory && !hasRealPermitHistory(parcel)) {
       return false;
     }
+    // __TEASER_STRIP_START__
     if (filterState.hideClaimed && isClaimedTerritory(parcel, soldTowns)) {
       return false;
     }
@@ -169,6 +172,7 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
     if (filterState.hideUnreachable && isUnreachable(parcel)) {
       return false;
     }
+    // __TEASER_STRIP_END__
     if (!filterState.showStateOnly && isStateOnly(parcel)) {
       return false;
     }
@@ -187,19 +191,23 @@ const DEFAULT_FILTER_STATE = {
   sidingMaterials: null,
   roofCoverMaterials: null,
   requireRealPermitHistory: false,
+  // __TEASER_STRIP_START__
   hideClaimed: true,
   hideWorked: true,
   hideMailed: true,
   hideUnreachable: true,
+  // __TEASER_STRIP_END__
   showStateOnly: false,
 };
 
 if (typeof module !== 'undefined') {
   module.exports = {
     isClaimedTerritory,
+    // __TEASER_STRIP_START__
     isWorked,
     isMailedOrShown,
     isUnreachable,
+    // __TEASER_STRIP_END__
     isStateOnly,
     hasRealPermitHistory,
     materialsOf,
