@@ -273,6 +273,22 @@ def parcels_for_client(conn: psycopg.Connection, client_id: str) -> list[dict[st
         return cur.fetchall()
 
 
+def update_parcel_use_classes(conn: psycopg.Connection, assignments: list[tuple[Any, str]]) -> int:
+    """Set `use_class` on many parcels by primary key (`id`) in ONE transaction: all or none.
+
+    `assignments` is `[(parcel_id, use_class), ...]`. Only `use_class` (and `updated_at`) change.
+    Idempotent. The column's CHECK constraint rejects any value outside the four classes, which
+    aborts and rolls back the whole batch. Returns the number of rows updated.
+    """
+    with conn.cursor() as cur:
+        cur.executemany(
+            "update parcels set use_class = %s, updated_at = now() where id = %s",
+            [(use_class, parcel_id) for parcel_id, use_class in assignments],
+        )
+    conn.commit()
+    return len(assignments)
+
+
 def update_parcel_coordinates(
     conn: psycopg.Connection, parcel_id: Any, latitude: float | None, longitude: float | None
 ) -> dict[str, Any]:

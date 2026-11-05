@@ -101,6 +101,19 @@ def is_unverified_state_only(parcel: dict[str, Any]) -> bool:
     return parcel.get("enrichment_status") == "state_only"
 
 
+def is_non_residential(parcel: dict[str, Any]) -> bool:
+    """True if `use_class` says this parcel is a commercial, industrial, school, church or other
+    institutional property rather than a home. Such a parcel is still scored (and still appears on
+    the internal dashboard) but is never selected for the digest, the Job Board export or a mail drop.
+
+    Only an explicit `"non_residential"` excludes. `NULL` (not classified yet), `"unknown"`,
+    `"residential"` and `"farm_forest_residential"` all stay eligible: excluding a home needs
+    positive evidence, the same "unknown must not be treated as confirmed" rule the other predicates
+    here follow.
+    """
+    return parcel.get("use_class") == "non_residential"
+
+
 def is_on_active_mail_drop(parcel: dict[str, Any]) -> bool:
     """True if this parcel is already queued for (or confirmed sent on) a
     physical mail drop -- 2026-10-29, mail-drop tracking. A lead already
@@ -165,6 +178,8 @@ def select_unsent_leads(
             continue
         if is_unverified_state_only(parcel):
             continue
+        if is_non_residential(parcel):
+            continue
         selected.append((lead, parcel))
         if len(selected) >= limit:
             break
@@ -214,6 +229,8 @@ def select_new_leads_for_pipeline(
         if is_likely_unreachable_owner(parcel):
             continue
         if is_unverified_state_only(parcel):
+            continue
+        if is_non_residential(parcel):
             continue
         if is_on_active_mail_drop(parcel):
             continue
