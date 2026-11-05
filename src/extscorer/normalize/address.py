@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from typing import NamedTuple
 
 _STREET_TYPE_ABBREVIATIONS = {
     "STREET": "ST",
@@ -66,25 +67,57 @@ def normalize_street_address(value: str | None) -> str | None:
     return normalized or None
 
 
-def split_owner_mailing_address(raw_lines: list[str]) -> tuple[str | None, str | None]:
-    """Split a `<br>`-joined owner mailing address (already split into
-    lines by the caller, e.g. `soup.find(...).get_text(separator="\\n")
-    .splitlines()`) into `(street_line, city_state_zip_line)`.
+class OwnerMailingBlock(NamedTuple):
+    """An owner mailing block split into its parts. `care_of` keeps any `C/O`/`ATTN` name on its
+    own, so it is never mistaken for the street (and is not thrown away)."""
 
-    Confirmed live shape on both platforms is exactly two meaningful lines
-    after the owner name is dropped (VGSI's `#MainContent_lblAddr1` IS the
-    address only, name lives in a separate `#MainContent_lblGenOwner`
-    span; propertyrecordcards.com's single cell has name as its own first
-    line instead, hence `raw_lines` here is expected to already have any
-    leading name line stripped by the caller, which knows its own
-    platform's shape). A blank trailing line (both platforms' HTML ends
-    the cell with a trailing `<br>`) is dropped rather than treated as a
-    real third field.
+    care_of: str | None
+    street: str | None
+    city_state_zip: str | None
+
+
+_CITY_STATE_ZIP_RE = re.compile(r"\b[A-Z]{2}\s+\d{5}(?:-\d{4})?$")
+_CARE_OF_RE = re.compile(r"^(?:C/O\b|C\\O\b|ATTN\b|ATT:|CARE OF\b|%)", re.I)
+# A street line is "number word..." (not a date such as a trust date "01/01/2000") or a PO box / route.
+_STREET_LINE_RE = re.compile(r"^(?:\d+[A-Za-z]?(?:-\d+)?\s+[A-Za-z]|P\.?\s?O\.?\s*BOX\b|BOX\b|RR\b|RT\b|ROUTE\b)", re.I)
+
+
+def parse_owner_mailing_block(raw_lines: list[str]) -> OwnerMailingBlock:
+    """Split a mailing block (owner name already removed) into care-of, street and city/state/zip.
+
+    Real cards put a `C/O NAME` or `ATTN:` line before the street, so "first line is the street, second is the city" misread the
+    care-of line as the street and the street as the city. The owner cell can also carry a second
+    name line (a co-owner, a trust, "% NAME"), which was likewise read as the street and made a
+    resident owner look absentee. The street is the street-shaped line
+    closest to the city/state/zip line instead. When the block has a care-of line and a city line but nothing
+    between (`C/O TOWN HALL` then the city line), `street` is None.
     """
-    lines = [line.strip() for line in raw_lines if line.strip()]
-    street_line = lines[0] if len(lines) >= 1 else None
-    city_state_zip_line = lines[1] if len(lines) >= 2 else None
-    return street_line, city_state_zip_line
+    lines = [line.strip() for line in raw_lines if line and line.strip()]
+    city_index = next((i for i in range(len(lines) - 1, -1, -1) if _CITY_STATE_ZIP_RE.search(lines[i].upper())), None)
+    before = lines[:city_index] if city_index is not None else lines
+    care_of_lines = [line for line in before if _CARE_OF_RE.match(line)]
+    address_lines = [line for line in before if not _CARE_OF_RE.match(line)]
+    street = None
+    if address_lines:
+        numbered = [line for line in address_lines if _STREET_LINE_RE.match(line)]
+        street = numbered[-1] if numbered else address_lines[-1]
+    if city_index is not None:
+        city = lines[city_index]
+    else:
+        # No recognisable city/state/zip: the line after the street, as before.
+        later = [line for line in address_lines if line != street]
+        city = later[0] if later else None
+    return OwnerMailingBlock(" ".join(care_of_lines) or None, street, city)
+
+
+def split_owner_mailing_address(raw_lines: list[str]) -> tuple[str | None, str | None]:
+    """`(street_line, city_state_zip_line)` of a mailing block; see `parse_owner_mailing_block`.
+
+    Identical to the old behaviour for the usual two-line block; a `C/O`/`ATTN` line no longer
+    becomes the street.
+    """
+    block = parse_owner_mailing_block(raw_lines)
+    return block.street, block.city_state_zip
 
 
 def format_owner_mailing_address(street_line: str | None, city_state_zip_line: str | None) -> str | None:
