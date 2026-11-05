@@ -280,3 +280,24 @@ def test_render_digest_html_no_storm_span_when_no_storm_data() -> None:
     leads = [(object(), {"address": "1 Old House Rd", "town": "Canterbury", "year_built": 1900})]
     html = render_digest_html(leads, _AS_OF_YEAR)
     assert "font-size:11px" not in html
+
+
+def test_describe_lead_short_permit_window_does_not_claim_never_redone() -> None:
+    from datetime import date
+
+    text = describe_lead(
+        {"exterior_wall_1": "Vinyl Siding", "permit_data_available": True, "permit_history_since": date(2023, 6, 8)},
+        _AS_OF_YEAR,
+    )
+    assert "no exterior work ever done" not in text
+    assert "only go back to 2023" in text
+
+
+def test_describe_lead_twenty_year_window_keeps_the_never_redone_wording() -> None:
+    from datetime import date
+
+    text = describe_lead(
+        {"exterior_wall_1": "Vinyl Siding", "permit_data_available": True, "permit_history_since": date(1997, 1, 1)},
+        _AS_OF_YEAR,
+    )
+    assert "no exterior work ever done" in text

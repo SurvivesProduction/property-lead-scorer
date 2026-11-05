@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from extscorer.scoring.basic import DEFAULT_CANOPY_OPTIMAL_PCT
+from extscorer.scoring.basic import DEFAULT_CANOPY_OPTIMAL_PCT, _permit_window_too_short
 
 _MONTH_NAMES = (
     "January", "February", "March", "April", "May", "June",
@@ -104,6 +104,15 @@ def _describe_siding(parcel: dict[str, Any], as_of_year: int) -> str | None:
         if most_recent is not None:
             years_since = as_of_year - most_recent.year
             return f"the {material_phrase} was last worked on in {most_recent.year} ({years_since} years ago, per town permit records)"
+        if _permit_window_too_short(parcel, as_of_year):
+            # The score treats "no permit on file" as unknown for a short
+            # window, so the copy must not claim "ever done" (a drift the
+            # standing rule on scoring changes exists to prevent).
+            since = parcel["permit_history_since"]
+            return (
+                f"the {material_phrase} has no exterior work in town permit records, "
+                f"which only go back to {since.year}, so its age is estimated from the year built"
+            )
         return f"town permit records show no exterior work ever done on the {material_phrase}"
     return f"the exterior siding ({material}) looks original to the house, based on town property records"
 
