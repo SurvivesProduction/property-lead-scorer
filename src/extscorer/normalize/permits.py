@@ -152,3 +152,68 @@ def merge_permit_histories(*histories: list[dict[str, Any]]) -> list[dict[str, A
             else:
                 merged[key] = dict(entry)
     return list(merged.values())
+
+
+# --- three classes of exterior work (scoring split, 2026-11-05) -------------------------------
+#
+# Re-siding a house resets the siding's age, re-roofing it resets the roof's age, and neither says
+# anything about the other. A new deck, porch, door or window is not a reset of either, but it shows an
+# owner who spends money on the exterior. So an exterior permit is classified into:
+#
+#   siding          siding, sided, sidewall(s), side wall, re-side, house wrap, clapboard
+#                   -> resets the SIDING age
+#   roof            roof, roofing, reroof / re-roof, shingle(s), reshingle
+#                   -> resets the ROOF age only (it does not reset the siding)
+#   other_exterior  windows, doors, decks, porches (and gutters, "exterior"); not fire or interior doors
+#                   -> a small positive "willingness to spend" signal, no reset
+#
+# One permit can be several ("re-roof and new siding"). The legacy `is_exterior_permit` above is
+# unchanged; this is the finer view used by the opt-in scoring switch `permit_class_split`.
+
+SIDING = "siding"
+ROOF = "roof"
+OTHER_EXTERIOR = "other_exterior"
+
+_SIDING_CLASS_PATTERN = re.compile(r"\b(?:siding|sided|sidewalls?|side wall|re-side|house ?wrap|clapboards?)\b")
+# Whole words, so "waterproof" and "fireproof" are not roofs.
+_ROOF_CLASS_PATTERN = re.compile(r"\b(?:re-?)?roof(?:ing|s|ed)?\b|\b(?:re-?)?shingl(?:e|es|ed|ing)\b")
+_OTHER_EXTERIOR_CLASS_PATTERN = re.compile(r"\b(?:windows?|doors?|decks?|porch(?:es)?|gutters?|exterior)\b")
+# Doors that are not exterior work: "fire door", "fire-rated door", "interior door", "int. door". They are
+# removed from the text before the other-exterior match, so "exterior door" and "storm door" still count.
+_NOT_EXTERIOR_DOOR_PATTERN = re.compile(r"\b(?:fire[- ](?:rated[- ])?|interior[- ]|int\.? )doors?\b")
+
+
+def classify_exterior_permit(
+    permit_type: str | None,
+    description: str | None,
+    status: str | None = None,
+) -> frozenset[str]:
+    """The set of exterior-work classes a permit belongs to (empty if it is not exterior work).
+
+    A Canceled / Denied / Void / Withdrawn permit was never built, so it is in no class.
+    """
+    if status is not None and status.strip().lower() in NOT_BUILT_PERMIT_STATUSES:
+        return frozenset()
+    text = f"{permit_type or ''} {description or ''}".lower()
+    classes = set()
+    if _SIDING_CLASS_PATTERN.search(text):
+        classes.add(SIDING)
+    if _ROOF_CLASS_PATTERN.search(text):
+        classes.add(ROOF)
+    if _OTHER_EXTERIOR_CLASS_PATTERN.search(_NOT_EXTERIOR_DOOR_PATTERN.sub(" ", text)):
+        classes.add(OTHER_EXTERIOR)
+    return frozenset(classes)
+
+
+def dated_permits_by_class(permit_history: list[dict[str, Any]] | None) -> dict[str, list[date]]:
+    """`{class: [dates, newest first]}` from a stored `permit_history`. Undated permits (drafts) are skipped."""
+    out: dict[str, list[date]] = {SIDING: [], ROOF: [], OTHER_EXTERIOR: []}
+    for entry in permit_history or []:
+        opened = parse_permit_date(entry.get("date_opened"))
+        if opened is None:
+            continue
+        for cls in classify_exterior_permit(entry.get("permit_type"), entry.get("reason"), entry.get("status")):
+            out[cls].append(opened)
+    for dates in out.values():
+        dates.sort(reverse=True)
+    return out

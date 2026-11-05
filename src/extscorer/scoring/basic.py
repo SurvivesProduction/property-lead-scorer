@@ -214,6 +214,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from extscorer.normalize.permits import OTHER_EXTERIOR, SIDING, dated_permits_by_class
+
 # Proposed defaults -- see module docstring's "Real-data recalibration"
 # section. A downstream deployment's client config is expected to
 # override these per-client, not edit them here.
@@ -669,6 +671,36 @@ def siding_age_score(
     return max(0.0, min(1.0, base))
 
 
+def _most_recent_siding_permit_date(parcel: dict[str, Any]) -> date | None:
+    """Newest permit that actually reset the SIDING (siding / sided / sidewall / re-side / house wrap /
+    clapboard), read from the parcel's stored `permit_history`. A roof, window or deck permit does not."""
+    dates = dated_permits_by_class(parcel.get("permit_history"))[SIDING]
+    return dates[0] if dates else None
+
+
+DEFAULT_SPEND_LOOKBACK_YEARS = 15
+DEFAULT_SPEND_SATURATION = 3
+
+
+def willingness_to_spend_score(
+    parcel: dict[str, Any],
+    as_of_year: int | None = None,
+    lookback_years: int = DEFAULT_SPEND_LOOKBACK_YEARS,
+    saturation: int = DEFAULT_SPEND_SATURATION,
+) -> float:
+    """0-1: how much this owner has recently spent on exterior work that is NOT a siding or roof reset
+    (windows, doors, decks, porches, gutters). `other_exterior` permits dated within `lookback_years`,
+    counted and capped: `saturation` of them (default 3) is the full 1.0. No permit history means 0.0
+    (no evidence, not a penalty: it only ever adds to a score, see `score_property`'s `spend_bonus`).
+    """
+    history = parcel.get("permit_history")
+    if not isinstance(history, list):
+        return 0.0
+    earliest = _current_year(as_of_year) - lookback_years
+    recent = [d for d in dated_permits_by_class(history)[OTHER_EXTERIOR] if d.year > earliest]
+    return min(1.0, len(recent) / saturation) if saturation > 0 else 0.0
+
+
 # A permit source whose history is shorter than this cannot show that a parcel
 # was "never redone": a house with no permit on file in a 3-year window is
 # simply unknown. At or above it, no permit on file is read as never redone
@@ -693,6 +725,7 @@ def real_siding_age_score(
     durable_decay_years: float = DEFAULT_REAL_SIDING_DURABLE_DECAY_YEARS,
     other_decay_years: float = DEFAULT_REAL_SIDING_OTHER_DECAY_YEARS,
     as_of_year: int | None = None,
+    permit_class_split: bool = False,
 ) -> float | None:
     """Score 0-1: real-mode siding material+age, using the direct
     `Siding:` field and real permit history together -- see module
@@ -760,7 +793,17 @@ def real_siding_age_score(
     else:
         decay_years = other_decay_years
 
-    most_recent_exterior_permit_date = parcel.get("most_recent_exterior_permit_date")
+    if permit_class_split and isinstance(parcel.get("permit_history"), list):
+        most_recent_exterior_permit_date = _most_recent_siding_permit_date(parcel)
+        if most_recent_exterior_permit_date is None:
+            # Class split: only a SIDING permit says anything about the siding's age. Re-siding is mostly
+            # done without a permit (roof permits far outnumber siding permits), so the absence of one is
+            # weak evidence, and "no siding permit" must not read as "never redone".
+            # A roof-only or windows-only history is treated like a town with no permit data: the
+            # material-based proxy, whatever the length of the permit window.
+            return siding_age_score(parcel)
+    else:
+        most_recent_exterior_permit_date = parcel.get("most_recent_exterior_permit_date")
     if most_recent_exterior_permit_date is not None:
         effective_redo_year = most_recent_exterior_permit_date.year
     elif permit_window_too_short(parcel, as_of_year):
@@ -780,7 +823,9 @@ def real_siding_age_score(
     return 1.0 - math.exp(-years_since_redone / decay_years)
 
 
-def siding_score(parcel: dict[str, Any], as_of_year: int | None = None) -> float | None:
+def siding_score(
+    parcel: dict[str, Any], as_of_year: int | None = None, permit_class_split: bool = False
+) -> float | None:
     """The one unified siding signal `score_property` actually uses --
     dispatches purely on each parcel's own `permit_data_available` flag,
     never on a hardcoded town list (that list has already changed once --
@@ -803,7 +848,7 @@ def siding_score(parcel: dict[str, Any], as_of_year: int | None = None) -> float
     with explicit overrides if a caller needs to tune those.
     """
     if parcel.get("permit_data_available"):
-        return real_siding_age_score(parcel, as_of_year=as_of_year)
+        return real_siding_age_score(parcel, as_of_year=as_of_year, permit_class_split=permit_class_split)
     return siding_age_score(parcel)
 
 
@@ -845,6 +890,8 @@ def score_property(
     enable_siding_signal: bool = DEFAULT_ENABLE_SIDING_SIGNAL,
     siding_weight: float = DEFAULT_SIDING_WEIGHT,
     as_of_year: int | None = None,
+    permit_class_split: bool = False,
+    spend_bonus: float = 0.0,
 ) -> LeadScore | None:
     """Score one parcel as an exterior-renovation-lead candidate, or None if it doesn't qualify.
 
@@ -891,12 +938,16 @@ def score_property(
 
     siding_component: float | None = None
     if enable_siding_signal:
-        siding_component = siding_score(parcel, as_of_year)
+        siding_component = siding_score(parcel, as_of_year, permit_class_split)
         if siding_component is not None:
             weighted_sum += siding_weight * siding_component
             total_weight += siding_weight
 
     score = weighted_sum / total_weight if total_weight > 0 else 0.0
+    if spend_bonus > 0:
+        # A recent window / door / deck / porch permit shows an owner who spends on the exterior. It can
+        # only ever ADD (at most `spend_bonus`), so a parcel with no such permit is not marked down.
+        score = min(1.0, score + spend_bonus * willingness_to_spend_score(parcel, as_of_year))
 
     living_area_sqft = parcel.get("living_area_sqft")
     reasons = [
@@ -962,6 +1013,8 @@ def rank_candidates(
     enable_siding_signal: bool = DEFAULT_ENABLE_SIDING_SIGNAL,
     siding_weight: float = DEFAULT_SIDING_WEIGHT,
     as_of_year: int | None = None,
+    permit_class_split: bool = False,
+    spend_bonus: float = 0.0,
 ) -> list[LeadScore]:
     """Score and rank every qualifying parcel, highest score first.
 
@@ -993,6 +1046,8 @@ def rank_candidates(
             enable_siding_signal=enable_siding_signal,
             siding_weight=siding_weight,
             as_of_year=as_of_year,
+            permit_class_split=permit_class_split,
+            spend_bonus=spend_bonus,
         )
         if lead is not None:
             scored.append(lead)
