@@ -796,3 +796,16 @@ def test_real_siding_age_score_woodstock_style_2001_window_is_the_full_signal() 
     assert real_siding_age_score(parcel, as_of_year=_AS_OF_YEAR) == real_siding_age_score(
         dict(parcel, permit_history_since=None), as_of_year=_AS_OF_YEAR
     )
+
+
+def test_permit_window_too_short_is_public_and_per_parcel() -> None:
+    # The Job Board export calls this per parcel for its `permit_history_short` flag.
+    from extscorer.scoring.basic import permit_window_too_short
+
+    assert permit_window_too_short({"permit_history_since": date(2023, 6, 8)}, 2026) is True
+    assert permit_window_too_short({"permit_history_since": date(1997, 1, 1)}, 2026) is False
+    assert permit_window_too_short({"permit_history_since": date(2006, 12, 31)}, 2026) is False  # exactly 20 calendar years
+    assert permit_window_too_short({"permit_history_since": date(2007, 1, 1)}, 2026) is True
+    assert permit_window_too_short({"permit_history_since": None}, 2026) is False
+    assert permit_window_too_short({}, 2026) is False
+

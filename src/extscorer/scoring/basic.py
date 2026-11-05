@@ -657,7 +657,7 @@ def siding_age_score(
 MIN_FULL_SIGNAL_PERMIT_HISTORY_YEARS = 20
 
 
-def _permit_window_too_short(parcel: dict[str, Any], as_of_year: int | None) -> bool:
+def permit_window_too_short(parcel: dict[str, Any], as_of_year: int | None) -> bool:
     """True when `permit_history_since` is set and the window it opens is
     under `MIN_FULL_SIGNAL_PERMIT_HISTORY_YEARS` long (counted in calendar
     years, like the rest of this module). `None` means an established source.
@@ -744,7 +744,7 @@ def real_siding_age_score(
     most_recent_exterior_permit_date = parcel.get("most_recent_exterior_permit_date")
     if most_recent_exterior_permit_date is not None:
         effective_redo_year = most_recent_exterior_permit_date.year
-    elif _permit_window_too_short(parcel, as_of_year):
+    elif permit_window_too_short(parcel, as_of_year):
         # No permit on file, but this town's permit source can't attest
         # to anything before permit_history_since -- too short a window
         # to trust the absence as "never redone." Fall back to the
