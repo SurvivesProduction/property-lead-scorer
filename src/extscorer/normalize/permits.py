@@ -18,6 +18,8 @@ the same shape (e.g. a "Building" permit whose Work Description reads
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
+from typing import Any
 
 # Substring keywords: each is distinctive enough that a bare substring match
 # is safe ("roofing", "windows", "shingles", "gutters" all SHOULD hit).
@@ -74,3 +76,79 @@ def is_exterior_permit(
     if _EXTERIOR_WHOLE_WORD_PATTERN.search(text):
         return True
     return any(keyword in text for keyword in EXTERIOR_PERMIT_KEYWORDS)
+
+
+# --- permit-history helpers (2026-11-05) -------------------------------------
+#
+# `parcels.permit_history` is a list of dicts (permit_number, permit_type,
+# date_opened, reason, and -- for PermitLink sources -- status). The denormalized
+# columns `exterior_permit_count` / `most_recent_exterior_permit_*` are derived
+# from it. Both the recompute script in property-lead-scorer-full and the
+# cross-source merge in permit-history-enrichment-full need that derivation, so
+# it lives here once, next to the classifier it depends on.
+
+_PLACEHOLDER_YEAR = 1900  # PermitLink "Historical" rows use 01/01/1900 for "no date"
+
+
+def parse_permit_date(value: str | None) -> date | None:
+    """MM/DD/YYYY -> date. Blank, malformed and the 01/01/1900 placeholder -> None."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.strptime(value.strip(), "%m/%d/%Y").date()
+    except ValueError:
+        return None
+    return None if parsed.year == _PLACEHOLDER_YEAR else parsed
+
+
+def summarize_permit_history(permit_history: list[dict[str, Any]]) -> dict[str, Any]:
+    """Derive the exterior-permit columns from a stored `permit_history` list.
+
+    Counts every dated permit the classifier calls exterior (a Canceled/Denied/
+    Void/Withdrawn `status`, when the entry carries one, never counts). The most
+    recent date and its type come from the entries whose date parses.
+    """
+    exterior = [
+        entry
+        for entry in permit_history
+        if parse_permit_date(entry.get("date_opened"))
+        and is_exterior_permit(entry.get("permit_type"), entry.get("reason"), entry.get("status"))
+    ]
+    most_recent: dict[str, Any] | None = None
+    most_recent_date: date | None = None
+    for entry in exterior:
+        opened = parse_permit_date(entry.get("date_opened"))
+        if opened is not None and (most_recent_date is None or opened > most_recent_date):
+            most_recent_date, most_recent = opened, entry
+    return {
+        "exterior_permit_count": len(exterior),
+        "most_recent_exterior_permit_date": most_recent_date,
+        "most_recent_exterior_permit_type": most_recent.get("permit_type") if most_recent else None,
+    }
+
+
+def _permit_key(entry: dict[str, Any]) -> tuple[str, str]:
+    number = re.sub(r"[^A-Z0-9]", "", (entry.get("permit_number") or "").upper())
+    if number and number != "DRAFT":
+        return number, (entry.get("date_opened") or "").strip()
+    # No usable number: fall back to what the permit says it is.
+    text = f"{entry.get('permit_type') or ''} {entry.get('reason') or ''}".lower()
+    return " ".join(text.split()), (entry.get("date_opened") or "").strip()
+
+
+def merge_permit_histories(*histories: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Union of several `permit_history` lists from different sources, deduped on
+    (permit number, date opened). The first occurrence wins, but a later duplicate
+    fills in a field the first one lacks (e.g. a PermitLink `status`).
+    """
+    merged: dict[tuple[str, str], dict[str, Any]] = {}
+    for history in histories:
+        for entry in history or []:
+            key = _permit_key(entry)
+            if key in merged:
+                for field, value in entry.items():
+                    if merged[key].get(field) in (None, "") and value not in (None, ""):
+                        merged[key][field] = value
+            else:
+                merged[key] = dict(entry)
+    return list(merged.values())
