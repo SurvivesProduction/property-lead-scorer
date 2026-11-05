@@ -114,6 +114,171 @@ scrape-shaped, one bulk-dataset-shaped) through the exact same
 data -- a reference for what a real source's `fetch`/`parse`/`normalize`
 methods and its `@register_source(...)` registration should look like.
 
+## Lead Board (interactive slider sales tool)
+
+`lead_board/` holds a self-contained, offline HTML page -- weight sliders
+and filters re-rank a client's scored leads LIVE in the browser, no
+backend, no login. Built for screen-sharing with a crew: which knobs they
+reach for is itself a signal for what to refine next.
+
+- **`lead_board/scoring.js`** -- re-weights each parcel's already-
+  persisted `score_*_component` columns (never recomputes the underlying
+  curves) plus two new OPTIONAL components computed client-side from
+  percentile rank -- job size (`living_area_sqft`, falling back to
+  `assessed_value`) and sale recency (`last_sale_year`) -- both default
+  weight 0, so the default ranking is byte-for-byte unchanged until a
+  viewer actually moves one.
+  - **Parity guarantee**: at the default weights and the stored as-of
+    year, this module's score matches the real, persisted `lead_score`
+    for every scoreable parcel within 1e-9, and its default ranking
+    exactly matches the database's own ordering, tiebreak included
+    (`living_area_sqft` desc, then `year_built` asc/oldest-first, then
+    `parcel_id` DESCENDING -- `rank_candidates`'s own `sorted(...,
+    reverse=True)` applies to every tuple field, parcel_id included).
+    Verified against the real population in
+    `property-lead-scorer-full/tests_js/test_parity.js` (that repo has
+    the real data; this one only has synthetic fixtures).
+- **`lead_board/filters.js`** -- town/year/canopy/job-size range filters,
+  siding-material and roof-cover multi-selects, "has real permit history"
+  (`permit_data_available AND NOT permit_history_short`), and five
+  toggles (hide claimed territory, hide worked, hide mailed/shown, hide
+  unreachable, show state-data-only -- defaults ON/ON/ON/ON/OFF).
+  - **Siding/roof filters, history**: a first Step 0 pass measured
+    coverage across ALL scoreable parcels (state-only included) and found
+    the raw text fields at only ~25% overall / ~4% in claimed towns --
+    dropped as too sparse. A follow-up re-measured against the DEFAULT-
+    filtered population (state-only rows excluded, what a viewer actually
+    sees by default) and found 96%/96% overall, 73%/70% in claimed towns
+    -- comfortably over the bar. RESTORED, but not as raw text: the real
+    data has ~85/~26 distinct free-text variants from inconsistent
+    scraping ("Clapboard" vs "Clapboards" vs "Clapboards/Board & Batten"),
+    an unusable wall of near-duplicate chips. `extscorer.normalize
+    .materials` (public repo's Python package) classifies each raw value
+    into a small family set instead -- reusing `extscorer.scoring.basic`'s
+    own siding-family keyword list for siding ("one shared mapping, not a
+    second copy in JS"; a composite value like "Vinyl Siding/Clapboards"
+    matches BOTH the Vinyl and Durable chips, unlike the single-family
+    dispatch scoring itself uses) and a new roof-only classifier (no
+    scoring equivalent exists for `roof_cover_material`) -- see that
+    module's own docstring. The board's JS just reads the precomputed
+    `siding_families`/`roof_family` fields; no classification logic lives
+    client-side. Each chip shows a live count (every OTHER active
+    filter/toggle applied, that dimension's own selection cleared) and
+    hides itself at zero. The `siding` WEIGHT slider was never affected
+    by any of this -- its `score_siding_component` is 100% present
+    (neutral 0.5 when the raw material is unknown) regardless of the raw
+    text's own sparsity.
+- **`lead_board/presets.js`** -- "Darren default" (the real config
+  weights), "Siding-focused" (siding is the heaviest weight, 0.70),
+  "Bigger jobs" (job size becomes meaningful while property age still
+  matters) -- see the file's own docstring for the exact numbers and why.
+  - **Siding-focused, 2026-10-30 fix**: the original version (property=
+    0.30, siding=0.50) measured 19-20/20 overlap with Darren default's
+    top 20 against the real population -- not a tuning miss, a
+    structural fact: `_durable_material_age_score` saturates to the SAME
+    1.0 ceiling `property_age_score` approaches for the same old house,
+    so any `property_weight > 0` keeps re-pinning the identical ancient-
+    durable-sided properties no matter how heavily siding is weighted
+    alongside it (confirmed directly: even `property_weight=0`/
+    `siding_weight=1.0` alone still returns a 100%-durable-material top
+    20, zero vinyl houses -- vinyl's own curve caps at 0.60, strictly
+    below durable's 1.0, so no linear reweighting of the real scoring
+    formula can ever surface a vinyl-sided house over a durable-sided
+    one). A literal "Vinyl-era" preset is therefore not buildable without
+    a material filter. Fixed by dropping `property_weight` to 0 and
+    adding canopy (0.15) + job size (0.10) as real differentiators:
+    measured 7/20 overlap with Darren default now (target was <=14/20),
+    11/20 with Bigger Jobs (a genuinely different cut, not a near-copy).
+    Regression-guarded against the real population in
+    `property-lead-scorer-full/tests_js/test_preset_overlap.js`.
+  - **Components-only builds, 2026-10-30** (support added for the
+    `-full` repo's `--teaser` build, which strips every raw field down
+    to just town/decade/component scores -- see that repo's own README
+    for the full re-identification reasoning): `canopyFilterValue`
+    (`filters.js`) falls back to the `canopy` component (0-100 scaled)
+    when `pct_tree_canopy_nearby` is absent -- not the same UNIT as a
+    real percentage (the component is a non-monotonic risk score), but
+    still a real, meaningfully-ordered value to filter on when that's
+    all a build has. `app.js` hides the siding-material/roof-cover
+    filter SECTIONS entirely (not a lone useless "Unknown" chip) once
+    `materialsOf`/`roofCoverOf`'s own option list collapses to size <=1
+    -- i.e. there's genuinely nothing left to filter on. `jobSize`/
+    `saleRecency` read a row's own precomputed `components.jobSize`/
+    `.saleRecency` when present (a components-only build has no raw
+    sqft/dollar/year fields to compute them from client-side at all),
+    falling back to the usual client-side percentile computation
+    otherwise. A row's `year_built` renders with an "s" suffix
+    ("1700s") when `metadata.year_built_granularity === 'decade'`.
+    `#sample-banner` shows "Showing a sample of N of M leads" when
+    `metadata.sample_size`/`.population_size` are set (static, set once
+    -- unlike `#result-count`, which keeps reflecting the live filtered
+    count within whatever sample is loaded).
+  - **Teaser-only UI gate, 2026-10-30 polish follow-up** (`IS_TEASER`,
+    read from `metadata.is_teaser`, set only by the `-full` repo's
+    `--teaser` build -- a no-op for every other build): the teaser build
+    now applies all five default exclusions (claimed/worked/mailed/
+    unreachable/state-only) server-side before sampling even runs, so
+    the corresponding ops toggles (`#toggle-claimed-row` etc., ids added
+    to `template.html`) have nothing left to do -- `applyTeaserUiAdjust
+    ments` hides those four `<label>` rows entirely, and `summarizeFilters`
+    swaps the dynamic "Hiding ..." line for one static line built from
+    `SOLD_TOWNS` ("Ashford, Killingly, Woodstock: territory already
+    claimed."). See the full repo's own README/ARCHITECTURE.md section
+    24e for the full before/after (visibility, town-mix cap, branding).
+- **`lead_board/state.js`** -- every slider/filter/toggle value round-
+  trips through the URL hash (base64url-encoded JSON); "Copy settings"
+  copies the same JSON to the clipboard.
+- **`lead_board/template.html`** + **`lead_board/app.js`** -- the page
+  skeleton (light/dark via `prefers-color-scheme` + a manual toggle,
+  mobile-responsive) and its DOM wiring.
+  - **Layout, 2026-10-30**: the results list is the FIRST panel (with the
+    live count and a one-line always-visible filter summary above it);
+    Weights and Towns/Filters are collapsible `<details>` panels, open by
+    default on desktop and closed on phone (set once from the viewport
+    width at load, never fought by a viewer's own manual toggle).
+  - **Rank numbering, 2026-10-30 fix**: a row's `#N` and its rank-change
+    arrow are now both LOCAL to the current filter set -- `renderResults`
+    filters first, then ranks that same filtered subset twice (current
+    weights for the shown order, Darren default for the arrow's
+    baseline), so `#7` really means "7th among what's visible" and the
+    arrow means "moved within this same visible set." The old version
+    ranked the full 24,578-parcel population once, unfiltered, then
+    sliced -- `#4172` on a narrowed view, and an arrow comparing against
+    a baseline that included rows the viewer couldn't even see.
+  - **Theme toggle, 2026-10-30 fix**: the first click now always visibly
+    switches. The old handler checked only whether `data-theme` had been
+    explicitly set, not the EFFECTIVE current scheme -- a system-dark
+    visitor's first click set `data-theme="dark"` explicitly, the SAME
+    appearance already showing, a no-op that only became visible on the
+    second press. Fixed to read `prefers-color-scheme` as the fallback
+    when no explicit attribute is set yet.
+  - No raw field names or raw scores in the main results list --
+    component bars and the two per-lead links only appear once a row is
+    expanded: **"View record card"** (the real `source_url`, when
+    present -- "No record link" otherwise, never a dead button) and
+    **"See it on the map"** (a Google Maps search link built from
+    address + town + "CT", `property-lead-scorer-full/scripts
+    /export_lead_board_data.py`'s `map_url` field -- omitted entirely, not
+  shown broken, for the handful of rows with no house-numbered address).
+  The two are independent -- a row can have either, both, or neither.
+
+`scripts/build_demo_board.py` inlines the template + JS modules + a fully
+synthetic fixture (fake towns/streets, covering a claimed town, a
+Windham-shaped short-permit-history town, worked/unworked/mailed rows,
+state-only rows, and sparse sale dates) into `demo/lead_board_demo.html`
+-- safe to commit, safe to screen-share. The REAL-data build
+(`property-lead-scorer-full/scripts/build_lead_board.py`) lives in the
+full repo, writes to its own gitignored `output/`, and is never committed
+-- see that repo's own README/ARCHITECTURE.
+
+Node tests (no framework installed -- `tests_js/_runner.js` is a ~30-line
+dependency-free runner; this project's Node predates the built-in test
+runner added in Node 18):
+
+```bash
+node tests_js/run_all.js
+```
+
 ## How the pieces fit together
 
 - **`extscorer.sources.base.LeadDataSource`** -- subclass once per town or

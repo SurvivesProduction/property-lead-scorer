@@ -1,0 +1,247 @@
+'use strict';
+
+const assert = require('assert');
+const path = require('path');
+const { test, run } = require('./_runner');
+const {
+  isClaimedTerritory,
+  isWorked,
+  isMailedOrShown,
+  isUnreachable,
+  isStateOnly,
+  hasRealPermitHistory,
+  materialsOf,
+  roofCoverOf,
+  canopyFilterValue,
+  UNKNOWN_MATERIAL,
+  applyFilters,
+  DEFAULT_FILTER_STATE,
+} = require(path.join('..', 'lead_board', 'filters.js'));
+
+function parcel(overrides) {
+  return Object.assign(
+    {
+      town: 'Canterbury',
+      year_built: 1950,
+      pct_tree_canopy_nearby: 40,
+      lead_key: 'Canterbury:1',
+      flags: {
+        permit_data_available: false,
+        permit_history_short: false,
+        is_absentee: false,
+        is_delinquent: false,
+        pipeline_status: null,
+        mailed_or_shown: false,
+        is_state_only: false,
+      },
+    },
+    overrides,
+    { flags: Object.assign({}, { permit_data_available: false, permit_history_short: false, is_absentee: false, is_delinquent: false, pipeline_status: null, mailed_or_shown: false, is_state_only: false }, overrides && overrides.flags) }
+  );
+}
+
+test('isClaimedTerritory: case-insensitive match against sold_towns', () => {
+  assert.strictEqual(isClaimedTerritory(parcel({ town: 'killingly' }), ['Killingly', 'Ashford']), true);
+  assert.strictEqual(isClaimedTerritory(parcel({ town: 'Canterbury' }), ['Killingly', 'Ashford']), false);
+});
+
+test('isWorked: no pipeline row at all is unworked', () => {
+  assert.strictEqual(isWorked(parcel({ flags: { pipeline_status: null } })), false);
+});
+
+test("isWorked: status 'new' is unworked", () => {
+  assert.strictEqual(isWorked(parcel({ flags: { pipeline_status: 'new' } })), false);
+});
+
+test("isWorked: any non-'new' status is worked", () => {
+  assert.strictEqual(isWorked(parcel({ flags: { pipeline_status: 'estimate booked' } })), true);
+  assert.strictEqual(isWorked(parcel({ flags: { pipeline_status: 'not interested' } })), true);
+});
+
+test('isMailedOrShown / isUnreachable / isStateOnly read their own flag', () => {
+  assert.strictEqual(isMailedOrShown(parcel({ flags: { mailed_or_shown: true } })), true);
+  assert.strictEqual(isUnreachable(parcel({ flags: { is_absentee: true } })), true);
+  assert.strictEqual(isUnreachable(parcel({ flags: { is_delinquent: true } })), true);
+  assert.strictEqual(isStateOnly(parcel({ flags: { is_state_only: true } })), true);
+});
+
+test('hasRealPermitHistory: true only when available AND not short', () => {
+  assert.strictEqual(
+    hasRealPermitHistory(parcel({ flags: { permit_data_available: true, permit_history_short: false } })),
+    true
+  );
+  assert.strictEqual(
+    hasRealPermitHistory(parcel({ flags: { permit_data_available: true, permit_history_short: true } })),
+    false,
+    'Windham-shaped row (permit visible but short history) must never read as real permit history'
+  );
+  assert.strictEqual(
+    hasRealPermitHistory(parcel({ flags: { permit_data_available: false, permit_history_short: false } })),
+    false
+  );
+});
+
+test('applyFilters default state: hides claimed/worked/mailed/unreachable/state-only', () => {
+  const parcels = [
+    parcel({ lead_key: 'claimed', town: 'Killingly' }),
+    parcel({ lead_key: 'worked', flags: { pipeline_status: 'estimate booked' } }),
+    parcel({ lead_key: 'mailed', flags: { mailed_or_shown: true } }),
+    parcel({ lead_key: 'unreachable', flags: { is_absentee: true } }),
+    parcel({ lead_key: 'state_only', flags: { is_state_only: true } }),
+    parcel({ lead_key: 'survivor' }),
+  ];
+  const result = applyFilters(parcels, DEFAULT_FILTER_STATE, ['Killingly'], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['survivor']);
+});
+
+test('applyFilters: showStateOnly=true includes state-only rows', () => {
+  const parcels = [parcel({ lead_key: 'state_only', flags: { is_state_only: true } })];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, { showStateOnly: true, hideClaimed: false, hideWorked: false, hideMailed: false, hideUnreachable: false });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.strictEqual(result.length, 1);
+});
+
+test('applyFilters: town chip filter restricts to the selected towns', () => {
+  const parcels = [parcel({ lead_key: 'a', town: 'Canterbury' }), parcel({ lead_key: 'b', town: 'Pomfret' })];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    towns: new Set(['Pomfret']),
+    hideClaimed: false,
+    hideWorked: false,
+    hideMailed: false,
+    hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['b']);
+});
+
+test('applyFilters: year-built range excludes out-of-range parcels, passes unknowns through', () => {
+  const parcels = [
+    parcel({ lead_key: 'old', year_built: 1800 }),
+    parcel({ lead_key: 'new', year_built: 2020 }),
+    parcel({ lead_key: 'unknown', year_built: null }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    yearBuiltMin: 1900,
+    yearBuiltMax: 2000,
+    hideClaimed: false,
+    hideWorked: false,
+    hideMailed: false,
+    hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['unknown']);
+});
+
+test('applyFilters: requireRealPermitHistory excludes a Windham-shaped (short-history) row', () => {
+  const parcels = [
+    parcel({ lead_key: 'windham_shaped', flags: { permit_data_available: true, permit_history_short: true } }),
+    parcel({ lead_key: 'real_history', flags: { permit_data_available: true, permit_history_short: false } }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    requireRealPermitHistory: true,
+    hideClaimed: false,
+    hideWorked: false,
+    hideMailed: false,
+    hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['real_history']);
+});
+
+test('materialsOf: reads the precomputed siding_families field, Unknown when empty/missing', () => {
+  assert.deepStrictEqual(materialsOf(parcel({ siding_families: ['vinyl', 'durable_original'] })), ['vinyl', 'durable_original']);
+  assert.deepStrictEqual(materialsOf(parcel({ siding_families: [] })), [UNKNOWN_MATERIAL]);
+  assert.deepStrictEqual(materialsOf(parcel({})), [UNKNOWN_MATERIAL]);
+});
+
+test('roofCoverOf: reads the precomputed roof_family field, Unknown when null/missing', () => {
+  assert.strictEqual(roofCoverOf(parcel({ roof_family: 'asphalt' })), 'asphalt');
+  assert.strictEqual(roofCoverOf(parcel({ roof_family: null })), UNKNOWN_MATERIAL);
+  assert.strictEqual(roofCoverOf(parcel({})), UNKNOWN_MATERIAL);
+});
+
+test('applyFilters: sidingMaterials filter matches a parcel touching ANY selected family (composite case)', () => {
+  const parcels = [
+    parcel({ lead_key: 'vinyl_only', siding_families: ['vinyl'] }),
+    parcel({ lead_key: 'composite', siding_families: ['vinyl', 'durable_original'] }),
+    parcel({ lead_key: 'durable_only', siding_families: ['durable_original'] }),
+    parcel({ lead_key: 'unknown', siding_families: [] }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    sidingMaterials: new Set(['durable_original']),
+    hideClaimed: false, hideWorked: false, hideMailed: false, hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key).sort(), ['composite', 'durable_only']);
+});
+
+test('applyFilters: sidingMaterials filter can select the Unknown bucket', () => {
+  const parcels = [
+    parcel({ lead_key: 'known', siding_families: ['vinyl'] }),
+    parcel({ lead_key: 'unknown', siding_families: [] }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    sidingMaterials: new Set([UNKNOWN_MATERIAL]),
+    hideClaimed: false, hideWorked: false, hideMailed: false, hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['unknown']);
+});
+
+test('applyFilters: roofCoverMaterials filter restricts to the selected roof family', () => {
+  const parcels = [
+    parcel({ lead_key: 'asphalt', roof_family: 'asphalt' }),
+    parcel({ lead_key: 'metal', roof_family: 'metal' }),
+  ];
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    roofCoverMaterials: new Set(['metal']),
+    hideClaimed: false, hideWorked: false, hideMailed: false, hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['metal']);
+});
+
+test('applyFilters: job-size percentile range filter', () => {
+  const parcels = [parcel({ lead_key: 'small' }), parcel({ lead_key: 'big' })];
+  const jobSize = new Map([['small', 0.1], ['big', 0.9]]);
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    jobSizePctMin: 50,
+    jobSizePctMax: 100,
+    hideClaimed: false,
+    hideWorked: false,
+    hideMailed: false,
+    hideUnreachable: false,
+  });
+  const result = applyFilters(parcels, state, [], jobSize);
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['big']);
+});
+
+test('canopyFilterValue: uses the raw percentage when present', () => {
+  assert.strictEqual(canopyFilterValue(parcel({ pct_tree_canopy_nearby: 65 })), 65);
+});
+
+test('canopyFilterValue: falls back to the canopy component (scaled to 0-100) when the raw percentage is absent (teaser rows)', () => {
+  const row = { components: { canopy: 0.7 } }; // no pct_tree_canopy_nearby at all
+  assert.strictEqual(canopyFilterValue(row), 70);
+});
+
+test('canopyFilterValue: null when neither is available', () => {
+  assert.strictEqual(canopyFilterValue({}), null);
+});
+
+test('applyFilters: canopy range filter works off the component for a teaser-shaped row with no raw percentage', () => {
+  const teaserRow = parcel({ lead_key: 'teaser-1', pct_tree_canopy_nearby: undefined, components: { canopy: 0.9 } });
+  delete teaserRow.pct_tree_canopy_nearby;
+  const state = Object.assign({}, DEFAULT_FILTER_STATE, {
+    canopyMin: 80,
+    canopyMax: 100,
+    hideClaimed: false,
+    hideWorked: false,
+    hideMailed: false,
+    hideUnreachable: false,
+  });
+  const result = applyFilters([teaserRow], state, [], new Map());
+  assert.deepStrictEqual(result.map((p) => p.lead_key), ['teaser-1']);
+});
+
+run();

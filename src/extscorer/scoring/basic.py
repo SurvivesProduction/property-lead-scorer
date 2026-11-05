@@ -37,7 +37,12 @@ max risk, restoring real spread across the bulk of the population).
 `low_extreme=0.0` is unchanged -- a natural boundary that doesn't need
 real-data calibration.
 
-**Weights**: `property=0.65` (up slightly from 0.6 -- still the confirmed
+**Weights** (as of THIS 2026-09-09 pass, three signals only, no siding
+yet -- SUPERSEDED 2026-09-15 by the four-signal weights in the "Siding
+signal" section below: `property=0.50`/`canopy=0.15`/`storm=0.05`/
+`siding=0.30`, current `DEFAULT_*_WEIGHT` reality; the numbers in THIS
+paragraph are historical narrative only, not the live defaults):
+`property=0.65` (up slightly from 0.6 -- still the confirmed
 leading signal), `canopy=0.28` (up from 0.25 -- now has real, confirmed
 differentiating power once recalibrated above), `storm=0.07` (down
 substantially from 0.15). The storm reduction is grounded in a real,
@@ -455,6 +460,17 @@ def storm_score(
 ## `exterior_wall_1` entirely, plus 6 real vinyl-proxy curve values that
 ## coincidentally interpolate to 0.5 for a common 1990s construction
 ## year -- not a classification gap).
+# Two more real gaps found 2026-10-29 (Prompt W follow-up #2, while
+# building the Lead Board's siding-material filter and reviewing every
+# raw value that landed in "Other"): "Board & Bat" (17 real parcels) is
+# VGSI's own truncated abbreviation of "Board & Batten" -- shorter than
+# the "board & batten" keyword below, so it never matched; "Hardy plank"
+# (1 parcel, misspelled on the card) is Hardie Plank, a real fiber-cement
+# siding product (same durable family as "fiber cement"/"cement board"
+# above), under either the correct "Hardie" or the real misspelled
+# "Hardy" a card can carry. Both landed in `siding_age_score`'s neutral
+# "other" 0.5 bucket before this fix -- see the follow-up report for the
+# exact before/after `lead_score` impact across the real population.
 _DURABLE_MATERIAL_KEYWORDS = (
     "wood",
     "aluminum",
@@ -462,6 +478,7 @@ _DURABLE_MATERIAL_KEYWORDS = (
     "clapboard",
     "shingle",
     "board & batten",
+    "board & bat",  # VGSI's own truncated "Board & Bat" -- a prefix of "board & batten" above
     "cedar",
     "redwd",
     "redwood",
@@ -479,6 +496,8 @@ _DURABLE_MATERIAL_KEYWORDS = (
     "cement",  # e.g. "Cement Board" -- a fiber-cement product, not vinyl
     "hardboard",
     "masonite",
+    "hardie",  # Hardie Plank/Board -- a real fiber-cement siding brand
+    "hardy",  # the same product, misspelled on at least one real card
 )
 
 
