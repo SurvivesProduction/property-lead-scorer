@@ -724,3 +724,75 @@ def test_score_property_real_mode_siding_reason_mentions_permit() -> None:
     assert "Siding: Clapboards" in lead.reasons[-1]
     assert "Roofing" in lead.reasons[-1]
     assert "2020-05-01" in lead.reasons[-1]
+
+
+def test_real_siding_age_score_twenty_year_window_keeps_the_full_signal() -> None:
+    # A permit source that reaches back 20+ years (Plainfield: 1997) is long
+    # enough that "no exterior permit on file" means "never redone since
+    # built" -- the same full-signal logic as a town with no window set.
+    parcel = {
+        "permit_data_available": True,
+        "exterior_wall_1": "Clapboards",
+        "year_built": 1900,
+        "permit_history_since": date(1997, 1, 1),
+    }
+    unguarded = real_siding_age_score(dict(parcel, permit_history_since=None), as_of_year=_AS_OF_YEAR)
+    assert real_siding_age_score(parcel, as_of_year=_AS_OF_YEAR) == unguarded
+    assert unguarded > 0.9
+
+
+def test_real_siding_age_score_window_boundary_is_twenty_calendar_years() -> None:
+    base = {"permit_data_available": True, "exterior_wall_1": "Clapboards", "year_built": 1900}
+    proxy = siding_age_score(base)
+    full = real_siding_age_score(base, as_of_year=_AS_OF_YEAR)
+    assert real_siding_age_score(dict(base, permit_history_since=date(_AS_OF_YEAR - 19, 1, 1)), as_of_year=_AS_OF_YEAR) == proxy
+    assert real_siding_age_score(dict(base, permit_history_since=date(_AS_OF_YEAR - 20, 12, 31)), as_of_year=_AS_OF_YEAR) == full
+
+
+def test_real_siding_age_score_sterling_style_window_is_unknown_not_never_redone() -> None:
+    parcel = {
+        "permit_data_available": True,
+        "exterior_wall_1": "Vinyl Siding",
+        "year_built": 1950,
+        "permit_history_since": date(2023, 6, 8),
+    }
+    assert real_siding_age_score(parcel, as_of_year=_AS_OF_YEAR) == siding_age_score(parcel)
+    # ...and a recent exterior permit still down-ranks it.
+    recent = dict(parcel, most_recent_exterior_permit_date=date(_AS_OF_YEAR - 1, 5, 1))
+    assert real_siding_age_score(recent, as_of_year=_AS_OF_YEAR) < real_siding_age_score(parcel, as_of_year=_AS_OF_YEAR)
+
+
+def test_real_siding_age_score_reads_the_permit_window_per_parcel_not_per_town() -> None:
+    # Thompson: PermitLink covers every parcel from 2021-02-03, but a parcel
+    # that also has a propertyrecordcards card reaches back to 1998. Same
+    # town, same house, same material -- only the parcel's own window differs.
+    base = {
+        "permit_data_available": True,
+        "exterior_wall_1": "Vinyl Siding",
+        "year_built": 1950,
+        "town": "Thompson",
+    }
+    card_enriched = dict(base, permit_history_since=date(1998, 4, 2))
+    permitlink_only = dict(base, permit_history_since=date(2021, 2, 3))
+
+    # 28-year window: full signal, "no permit" = never redone since 1950.
+    assert real_siding_age_score(card_enriched, as_of_year=_AS_OF_YEAR) == real_siding_age_score(
+        dict(base, permit_history_since=None), as_of_year=_AS_OF_YEAR
+    )
+    # 5-year window: unknown, scored from the siding-age proxy.
+    assert real_siding_age_score(permitlink_only, as_of_year=_AS_OF_YEAR) == siding_age_score(permitlink_only)
+    assert real_siding_age_score(card_enriched, as_of_year=_AS_OF_YEAR) != real_siding_age_score(
+        permitlink_only, as_of_year=_AS_OF_YEAR
+    )
+
+
+def test_real_siding_age_score_woodstock_style_2001_window_is_the_full_signal() -> None:
+    parcel = {
+        "permit_data_available": True,
+        "exterior_wall_1": "Clapboards",
+        "year_built": 1920,
+        "permit_history_since": date(2001, 9, 1),
+    }
+    assert real_siding_age_score(parcel, as_of_year=_AS_OF_YEAR) == real_siding_age_score(
+        dict(parcel, permit_history_since=None), as_of_year=_AS_OF_YEAR
+    )

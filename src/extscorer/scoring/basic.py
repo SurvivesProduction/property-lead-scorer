@@ -650,6 +650,24 @@ def siding_age_score(
     return max(0.0, min(1.0, base))
 
 
+# A permit source whose history is shorter than this cannot show that a parcel
+# was "never redone": a house with no permit on file in a 3-year window is
+# simply unknown. At or above it, no permit on file is read as never redone
+# since `year_built`, the full-signal logic every pre-Windham town uses.
+MIN_FULL_SIGNAL_PERMIT_HISTORY_YEARS = 20
+
+
+def _permit_window_too_short(parcel: dict[str, Any], as_of_year: int | None) -> bool:
+    """True when `permit_history_since` is set and the window it opens is
+    under `MIN_FULL_SIGNAL_PERMIT_HISTORY_YEARS` long (counted in calendar
+    years, like the rest of this module). `None` means an established source.
+    """
+    since = parcel.get("permit_history_since")
+    if since is None:
+        return False
+    return _current_year(as_of_year) - since.year < MIN_FULL_SIGNAL_PERMIT_HISTORY_YEARS
+
+
 def real_siding_age_score(
     parcel: dict[str, Any],
     vinyl_decay_years: float = DEFAULT_REAL_SIDING_VINYL_DECAY_YEARS,
@@ -686,8 +704,10 @@ def real_siding_age_score(
     file" plausibly means "never redone" over the parcel's whole
     lifetime. `parcel["permit_history_since"]` makes that assumption
     explicit per parcel: `None` (every pre-Windham permit-visible town)
-    keeps the fallback above unchanged. A real date (Windham's PermitLink
-    portal only covers 2026-04-15 forward) means the opposite -- "no
+    keeps the fallback above unchanged, and so does a date 20 or more
+    years back (`MIN_FULL_SIGNAL_PERMIT_HISTORY_YEARS`, Plainfield's 1997).
+    A shorter window (Windham's PermitLink portal only covers 2026-04-15
+    forward; Sterling's 2023-06-08) means the opposite -- "no
     permit found" there is NOT evidence of anything, since literally
     every parcel in that town would show the same absence regardless of
     its real roof age. In that case this function falls back to
@@ -724,7 +744,7 @@ def real_siding_age_score(
     most_recent_exterior_permit_date = parcel.get("most_recent_exterior_permit_date")
     if most_recent_exterior_permit_date is not None:
         effective_redo_year = most_recent_exterior_permit_date.year
-    elif parcel.get("permit_history_since") is not None:
+    elif _permit_window_too_short(parcel, as_of_year):
         # No permit on file, but this town's permit source can't attest
         # to anything before permit_history_since -- too short a window
         # to trust the absence as "never redone." Fall back to the
