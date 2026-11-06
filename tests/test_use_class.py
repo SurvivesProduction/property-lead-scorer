@@ -153,3 +153,8 @@ def test_both_digest_selectors_skip_non_residential_but_keep_unclassified_and_un
     assert [p["parcel_id"] for _, p in picked] == ["b", "c", "d"]
     picked = select_new_leads_for_pipeline(ranked, set(), 10)
     assert [p["parcel_id"] for _, p in picked] == ["b", "c", "d"]
+
+
+@pytest.mark.parametrize("description", ["1-Family", "2-Family", "SF with In-law", "Res. Condo", "SFR WATER M01", "SFR/INLAW"])
+def test_state_descriptions_added_for_the_putnam_and_griswold_loads_are_residential(description: str) -> None:
+    assert classify_use_class_with_source(_p({"state_use_description": description})) == (RESIDENTIAL, "state_cama")
