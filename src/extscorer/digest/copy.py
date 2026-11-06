@@ -139,7 +139,9 @@ def _capitalize_sentence(clauses: list[str]) -> str:
     return sentence[0].upper() + sentence[1:]
 
 
-def _describe_main_clauses(parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False) -> list[str]:
+def _describe_main_clauses(
+    parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False, spend_bonus: float = 0.0
+) -> list[str]:
     """Property age, siding, and canopy clauses, in that order -- the
     signals' own weight order (see `extscorer.scoring.basic`'s module
     docstring) minus storm, which `describe_lead_parts` renders
@@ -155,9 +157,10 @@ def _describe_main_clauses(parcel: dict[str, Any], as_of_year: int, permit_class
     siding_clause = _describe_siding(parcel, as_of_year, permit_class_split)
     if siding_clause is not None:
         clauses.append(siding_clause)
-    if permit_class_split and willingness_to_spend_score(parcel, as_of_year) > 0:
-        # Matches the small `spend_bonus` in the score: windows, doors, decks or porches done in the last
-        # 15 years show an owner who invests in the exterior.
+    if spend_bonus > 0 and willingness_to_spend_score(parcel, as_of_year) > 0:
+        # Gated on `spend_bonus`, the same switch the score uses, so the copy never cites a factor that played
+        # no part in the ranking: windows, doors, decks or porches done in the last 15 years show an owner who
+        # invests in the exterior.
         clauses.append("recent exterior upgrades on file (windows, doors, a deck or porch) suggest an owner who invests in the house")
 
     pct = parcel.get("pct_tree_canopy_nearby")
@@ -178,14 +181,16 @@ def _describe_storm(parcel: dict[str, Any]) -> str | None:
     return f"a storm was recorded in the area on {_format_storm_date(storm_date)}"
 
 
-def describe_lead(parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False) -> str:
+def describe_lead(
+    parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False, spend_bonus: float = 0.0
+) -> str:
     """One short, plain-language sentence explaining why a property made
     the list -- built from real signal values, not internal scores. Used
     by the plain-text renderer, which has no way to visually de-emphasize
     the storm clause the way `describe_lead_parts` lets the HTML renderer
     do -- folds every clause (including storm) into one sentence.
     """
-    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split)
+    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split, spend_bonus)
     storm_clause = _describe_storm(parcel)
     if storm_clause is not None:
         clauses.append(storm_clause)
@@ -196,7 +201,7 @@ def describe_lead(parcel: dict[str, Any], as_of_year: int, permit_class_split: b
 
 
 def describe_lead_parts(
-    parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False
+    parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False, spend_bonus: float = 0.0
 ) -> tuple[str, str | None]:
     """(main_sentence, storm_sentence) -- used by the HTML renderer to
     style the storm clause smaller/lighter than the real differentiating
@@ -204,7 +209,7 @@ def describe_lead_parts(
     `storm_sentence` is `None` when there's no storm data on file, same
     as every other "not on file" convention here.
     """
-    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split)
+    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split, spend_bonus)
     main_sentence = _capitalize_sentence(clauses) if clauses else "On our list based on property age."
 
     storm_clause = _describe_storm(parcel)
@@ -218,6 +223,7 @@ def render_digest_text(
     as_of_year: int,
     sheet_url: str | None = None,
     permit_class_split: bool = False,
+    spend_bonus: float = 0.0,
 ) -> str:
     """Plain-text digest body -- the email's `text` fallback.
 
@@ -246,7 +252,7 @@ def render_digest_text(
     )
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         lines.append(f"{i}. {parcel.get('address', 'Unknown address')}, {parcel.get('town', '')}")
-        lines.append(f"   {describe_lead(parcel, as_of_year, permit_class_split)}")
+        lines.append(f"   {describe_lead(parcel, as_of_year, permit_class_split, spend_bonus)}")
         source_url = parcel.get("source_url")
         if source_url:
             lines.append(f"   Verify this property: {source_url}")
@@ -288,6 +294,7 @@ def render_digest_html(
     as_of_year: int,
     sheet_url: str | None = None,
     permit_class_split: bool = False,
+    spend_bonus: float = 0.0,
 ) -> str:
     """A single self-contained HTML email -- inline styles only, no
     external assets, same rendering-reliability discipline as Tool 1's
@@ -310,7 +317,7 @@ def render_digest_html(
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         address = _esc(parcel.get("address", "Unknown address"))
         town = _esc(parcel.get("town", ""))
-        main_sentence, storm_sentence = describe_lead_parts(parcel, as_of_year, permit_class_split)
+        main_sentence, storm_sentence = describe_lead_parts(parcel, as_of_year, permit_class_split, spend_bonus)
         description = _esc(main_sentence)
         if storm_sentence is not None:
             # Smaller, lighter-weight, muted-color -- identical across

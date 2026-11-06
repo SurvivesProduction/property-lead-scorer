@@ -27,7 +27,7 @@ _AS_OF = 2026
     [
         ("strip existing siding, install house wrap and vinyl siding", {SIDING}),
         ("replace damaged sidewall", {SIDING}),
-        ("new side wall shingles", {SIDING, ROOF}),  # "shingles" is a roof word; the wall is siding
+        ("new side wall shingles", {SIDING}),  # names the walls and has no roof signal: siding only
         ("re-side the garage", {SIDING}),
         ("replace clapboards on front", {SIDING}),
         ("full roof replacement", {ROOF}),
@@ -38,6 +38,44 @@ _AS_OF = 2026
         ("new entry door and storm doors", {OTHER_EXTERIOR}),
         ("re-roof and new vinyl siding", {SIDING, ROOF}),
         ("replace roof and windows", {ROOF, OTHER_EXTERIOR}),
+        # wall shingles are siding when the text names the walls and nothing marks it as a roof job
+        ("reshingle front and side of house", {SIDING}),
+        ("replace wood shingles on walls", {SIDING}),
+        ("new cedar shakes on exterior walls", {SIDING}),
+        ("re-shingle the back of the home", {SIDING}),
+        # ...and stay ROOF when they do not, or when a roof signal is present
+        ("reshingle 17 sq", {ROOF}),
+        ("strip shingles off house, 24 squares", {ROOF}),
+        ("reshingle roof and wall shingles", {ROOF}),
+        ("new asphalt shingles", {ROOF}),
+        ("strip existing shingles off of house and garage", {ROOF}),
+        # the bare word \"exterior\" is an upgrade only when the permit is not a siding or roof job
+        ("replace exterior siding", {SIDING}),
+        ("Exterior: full roof replacement", {ROOF}),
+        ("exterior painting and trim", {OTHER_EXTERIOR}),
+        # roof decking is sheathing, not a deck
+        ("strip shingles, replace roof deck", {ROOF}),
+        ("replace roof decking", {ROOF}),
+        # interior-room wording needs an explicit outside word before a door or deck counts
+        ("bathroom remodel incl. new shower door", set()),
+        ("finish basement: interior and closet doors", set()),
+        ("interior remodel: new kitchen, doors and trim", set()),
+        ("kitchen remodel and new cabinet doors", set()),
+        ("kitchen remodel plus new back door", {OTHER_EXTERIOR}),
+        ("bedroom addition with new entry door", {OTHER_EXTERIOR}),
+        ("bathroom remodel, replace storm door", {OTHER_EXTERIOR}),
+        ("basement finish and garage door replacement", {OTHER_EXTERIOR}),
+        ("kitchen remodel and new porch", {OTHER_EXTERIOR}),
+        # real outside work in a permit that also remodels an interior room is kept
+        ("remodel kitchen and add 12x16 deck", {OTHER_EXTERIOR}),
+        ("addition with bed and bath, 8x12 deck", {OTHER_EXTERIOR}),
+        ("open up kitchen wall and rebuild rear deck", {OTHER_EXTERIOR}),
+        ("finish basement rooms, new walkout with slider door", {OTHER_EXTERIOR}),
+        ("basement bath, install patio door", {OTHER_EXTERIOR}),
+        # ...while interior work that merely mentions a deck or door is not
+        ("gas line routed beneath the deck and into the basement utility room", set()),
+        ("interior reno, move door between rooms", set()),
+        ("bathroom remodel and replace window", {OTHER_EXTERIOR}),  # a window is in the shell wherever the room is
         ("waterproofing the basement", set()),
         ("install fire door and interior doors", set()),
         ("replace fire-rated door", set()),

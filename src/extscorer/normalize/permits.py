@@ -175,12 +175,51 @@ ROOF = "roof"
 OTHER_EXTERIOR = "other_exterior"
 
 _SIDING_CLASS_PATTERN = re.compile(r"\b(?:siding|sided|sidewalls?|side wall|re-side|house ?wrap|clapboards?)\b")
-# Whole words, so "waterproof" and "fireproof" are not roofs.
-_ROOF_CLASS_PATTERN = re.compile(r"\b(?:re-?)?roof(?:ing|s|ed)?\b|\b(?:re-?)?shingl(?:e|es|ed|ing)\b")
-_OTHER_EXTERIOR_CLASS_PATTERN = re.compile(r"\b(?:windows?|doors?|decks?|porch(?:es)?|gutters?|exterior)\b")
+
+# Roof wording. "roof", "roofing", "reroof" are whole words, so "waterproof" and "fireproof" are not roofs.
+_ROOF_WORD_PATTERN = re.compile(r"\b(?:re-?)?roof(?:ing|s|ed)?\b")
+# "17 sq" / "20 squares" is how a roof job is sized, even when the word "roof" is missing.
+_ROOF_SQUARES_PATTERN = re.compile(r"\b\d+(?:\.\d+)?\s*(?:sq|sqs|squares?)\b")
+_SHINGLE_PATTERN = re.compile(r"\b(?:re-?)?shingl(?:e|es|ed|ing)\b|\bshakes?\b")
+# Text that says the work is on the WALLS: "walls", "wall shingles", "exterior walls", "front/side/back of house".
+_NAMES_WALLS_PATTERN = re.compile(
+    r"\bwalls?\b|\b(?:front|side|back|rear)(?:\s+and\s+(?:front|side|back|rear))*\s+of\s+(?:the\s+)?(?:house|home)\b"
+)
+
+_OTHER_EXTERIOR_PATTERN = re.compile(r"\b(?:windows?|doors?|decks?|porch(?:es)?|gutters?)\b")
+_EXTERIOR_WORD_PATTERN = re.compile(r"\bexterior\b")
 # Doors that are not exterior work: "fire door", "fire-rated door", "interior door", "int. door". They are
 # removed from the text before the other-exterior match, so "exterior door" and "storm door" still count.
 _NOT_EXTERIOR_DOOR_PATTERN = re.compile(r"\b(?:fire[- ](?:rated[- ])?|interior[- ]|int\.? )doors?\b")
+# "roof deck" / "roof decking" is the roof's sheathing, not a deck.
+_ROOF_DECK_PATTERN = re.compile(r"\broof[- ]deck(?:ing)?\b")
+# Interior-room wording. A door or deck in a permit that talks about a bathroom or a kitchen is interior work
+# unless the text also says it is an outside door ("storm", "entry", "front", "back", "garage", "porch",
+# "exterior"). Windows are left out of this test: a window is in the building's shell wherever the room is.
+_INTERIOR_ROOM_PATTERN = re.compile(r"\b(?:bath(?:room)?|shower|kitchen|basement|closet|cabinet|bedroom|interior)\b")
+_EXPLICIT_EXTERIOR_PATTERN = re.compile(r"\b(?:storm|entry|front|back|rear|garage|patio|walk[- ]?out|porch(?:es)?|exterior)\b")
+# A deck that is being built or sized is outside work even in a permit that also remodels a kitchen:
+# "add 10x28 deck", "upgrade deck", "6x10 deck". "gas line under the deck" matches neither.
+_DECK_BUILT_PATTERN = re.compile(
+    r"\b(?:add|adding|new|build|construct|install|replace|upgrade|rebuild)\w*\s+(?:[\w']+\s+){0,3}deck\b"
+    r"|\b\d+\s*(?:'|ft)?\s*x\s*\d+\S*\s+(?:\w+\s+)?deck\b"
+)
+_DOOR_OR_DECK_PATTERN = re.compile(r"\b(?:doors?|decks?)\b")
+_WINDOW_PATTERN = re.compile(r"\bwindows?\b")
+_ALWAYS_EXTERIOR_PATTERN = re.compile(r"\b(?:porch(?:es)?|gutters?)\b")
+
+
+def _is_other_exterior(text: str, has_siding_or_roof: bool) -> bool:
+    text = _NOT_EXTERIOR_DOOR_PATTERN.sub(" ", _ROOF_DECK_PATTERN.sub(" ", text))
+    if _ALWAYS_EXTERIOR_PATTERN.search(text) or _WINDOW_PATTERN.search(text):
+        return True
+    if _DOOR_OR_DECK_PATTERN.search(text):
+        if not _INTERIOR_ROOM_PATTERN.search(text):
+            return True
+        return bool(_EXPLICIT_EXTERIOR_PATTERN.search(text) or _DECK_BUILT_PATTERN.search(text))
+    # The bare word "exterior" ("exterior painting") counts only when the permit is not already a siding or
+    # roof job; "replace exterior siding" is a siding permit, not also an upgrade.
+    return bool(_EXTERIOR_WORD_PATTERN.search(text)) and not has_siding_or_roof
 
 
 def classify_exterior_permit(
@@ -191,16 +230,25 @@ def classify_exterior_permit(
     """The set of exterior-work classes a permit belongs to (empty if it is not exterior work).
 
     A Canceled / Denied / Void / Withdrawn permit was never built, so it is in no class.
+
+    Shingles are ambiguous: they cover roofs and also walls. A shingle (or shake) permit is SIDING when the
+    text names the walls (walls, wall shingles, front/side/back of house) and nothing marks it as a roof job
+    (the word "roof", or a size in "sq" / "squares"). Otherwise it stays ROOF, so "reshingle 17 sq" is a roof.
     """
     if status is not None and status.strip().lower() in NOT_BUILT_PERMIT_STATUSES:
         return frozenset()
     text = f"{permit_type or ''} {description or ''}".lower()
     classes = set()
-    if _SIDING_CLASS_PATTERN.search(text):
+    has_roof_word = bool(_ROOF_WORD_PATTERN.search(text))
+    has_squares = bool(_ROOF_SQUARES_PATTERN.search(text))
+    has_shingle = bool(_SHINGLE_PATTERN.search(text))
+    wall_shingles = has_shingle and bool(_NAMES_WALLS_PATTERN.search(text)) and not has_roof_word and not has_squares
+
+    if _SIDING_CLASS_PATTERN.search(text) or wall_shingles:
         classes.add(SIDING)
-    if _ROOF_CLASS_PATTERN.search(text):
+    if has_roof_word or has_squares or (has_shingle and not wall_shingles):
         classes.add(ROOF)
-    if _OTHER_EXTERIOR_CLASS_PATTERN.search(_NOT_EXTERIOR_DOOR_PATTERN.sub(" ", text)):
+    if _is_other_exterior(text, has_siding_or_roof=bool(classes)):
         classes.add(OTHER_EXTERIOR)
     return frozenset(classes)
 

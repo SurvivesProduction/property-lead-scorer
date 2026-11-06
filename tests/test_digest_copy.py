@@ -335,8 +335,13 @@ def test_class_split_off_keeps_the_legacy_wording() -> None:
     assert "last worked on in 2022" in describe_lead(roofed, _AS_OF_YEAR)
 
 
-def test_the_spend_clause_appears_only_with_the_split_and_a_recent_upgrade() -> None:
+def test_the_spend_clause_follows_spend_bonus_not_the_split_flag() -> None:
     with_windows = _split_parcel([_WINDOWS])
-    assert "invests in the house" in describe_lead(with_windows, _AS_OF_YEAR, permit_class_split=True)
+    assert "invests in the house" in describe_lead(with_windows, _AS_OF_YEAR, spend_bonus=0.03)
+    # the split alone does not put the line in: the score would not have used the signal
+    assert "invests in the house" not in describe_lead(with_windows, _AS_OF_YEAR, permit_class_split=True)
     assert "invests in the house" not in describe_lead(with_windows, _AS_OF_YEAR)
-    assert "invests in the house" not in describe_lead(_split_parcel([_ROOF]), _AS_OF_YEAR, permit_class_split=True)
+    # and no upgrade means no line however the switches are set
+    assert "invests in the house" not in describe_lead(
+        _split_parcel([_ROOF]), _AS_OF_YEAR, permit_class_split=True, spend_bonus=0.03
+    )
