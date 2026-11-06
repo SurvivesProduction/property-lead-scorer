@@ -193,6 +193,20 @@ _STATE_DESCRIPTION_CLASS: dict[str, str] = {
     'vol fire dept': 'non_residential',
 }
 
+
+# Added 2026-11-06 for the Putnam and Griswold state-CAMA loads (spellings the regex tier would
+# otherwise have to guess at). Same review as the table above.
+_STATE_DESCRIPTION_CLASS.update(
+    {
+        '1-family': 'residential',
+        '2-family': 'residential',
+        'sf with in-law': 'residential',
+        'res. condo': 'residential',
+        'sfr water': 'residential',
+        'sfr/inlaw': 'residential',
+    }
+)
+
 _PRC_PROPERTY_USE_CLASS: dict[str, str] = {
     'apartments': 'residential',
     'automotive': 'non_residential',
