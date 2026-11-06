@@ -301,3 +301,47 @@ def test_describe_lead_twenty_year_window_keeps_the_never_redone_wording() -> No
         _AS_OF_YEAR,
     )
     assert "no exterior work ever done" in text
+
+
+# --- class-split wording (the copy must match the scoring rule) ---
+
+def _split_parcel(history: list[dict], **extra) -> dict:
+    return {"exterior_wall_1": "Vinyl Siding", "year_built": 1930, "permit_data_available": True,
+            "permit_history": history, "most_recent_exterior_permit_date": None, **extra}
+
+
+_SIDING = {"permit_type": "Building", "reason": "new vinyl siding", "date_opened": "06/01/2015"}
+_ROOF = {"permit_type": "Building", "reason": "full roof replacement", "date_opened": "06/01/2022"}
+_WINDOWS = {"permit_type": "Building", "reason": "replace 6 windows", "date_opened": "06/01/2022"}
+
+
+def test_class_split_copy_names_the_last_siding_permit() -> None:
+    text = describe_lead(_split_parcel([_SIDING, _ROOF]), _AS_OF_YEAR, permit_class_split=True)
+    assert "last redone in 2015" in text and f"{_AS_OF_YEAR - 2015} years ago" in text
+
+
+def test_class_split_copy_never_claims_the_siding_was_never_redone() -> None:
+    for history in ([], [_ROOF], [_WINDOWS]):
+        text = describe_lead(_split_parcel(history), _AS_OF_YEAR, permit_class_split=True)
+        assert "no siding permit on file" in text
+        assert "re-siding is often unpermitted" in text
+        assert "ever done" not in text and "last worked on" not in text
+
+
+def test_class_split_off_keeps_the_legacy_wording() -> None:
+    text = describe_lead(_split_parcel([]), _AS_OF_YEAR)
+    assert "no exterior work ever done" in text
+    roofed = _split_parcel([_ROOF], most_recent_exterior_permit_date=date(2022, 6, 1))
+    assert "last worked on in 2022" in describe_lead(roofed, _AS_OF_YEAR)
+
+
+def test_the_spend_clause_follows_spend_bonus_not_the_split_flag() -> None:
+    with_windows = _split_parcel([_WINDOWS])
+    assert "invests in the house" in describe_lead(with_windows, _AS_OF_YEAR, spend_bonus=0.03)
+    # the split alone does not put the line in: the score would not have used the signal
+    assert "invests in the house" not in describe_lead(with_windows, _AS_OF_YEAR, permit_class_split=True)
+    assert "invests in the house" not in describe_lead(with_windows, _AS_OF_YEAR)
+    # and no upgrade means no line however the switches are set
+    assert "invests in the house" not in describe_lead(
+        _split_parcel([_ROOF]), _AS_OF_YEAR, permit_class_split=True, spend_bonus=0.03
+    )
