@@ -158,7 +158,7 @@ def _describe_main_clauses(
     """
     clauses: list[str] = []
 
-    year_built, year_source = resolve_year_built(parcel, year_built_placeholder_fallback)
+    year_built, year_source = resolve_year_built(parcel, year_built_placeholder_fallback, as_of_year)
     if year_source == UNKNOWN:
         clauses.append("recorded as built in 1900, a common placeholder, so its real age is unknown")
     elif year_source == EFFECTIVE_FALLBACK:

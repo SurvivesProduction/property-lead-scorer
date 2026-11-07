@@ -215,7 +215,7 @@ from datetime import date
 from typing import Any
 
 from extscorer.normalize.walls import is_masonry_exterior
-from extscorer.normalize.year_built import ACTUAL, UNKNOWN, resolve_year_built
+from extscorer.normalize.year_built import ACTUAL, UNKNOWN, renovation_suggested, resolve_year_built
 from extscorer.normalize.permits import OTHER_EXTERIOR, SIDING, dated_permits_by_class
 
 # Proposed defaults -- see module docstring's "Real-data recalibration"
@@ -944,7 +944,9 @@ def score_property(
     disabled entirely for a caller that wants the pre-siding-signal
     behavior.
     """
-    year_built, year_source = resolve_year_built(parcel, year_built_placeholder_fallback)
+    year_built, year_source = resolve_year_built(
+        parcel, year_built_placeholder_fallback, _current_year(as_of_year), property_age_threshold_years
+    )
     if year_source == UNKNOWN:
         # 1900 placeholder with no usable effective year: neither disqualified nor treated as old; age scores neutral.
         age = _current_year(as_of_year) - parcel["year_built"]
@@ -990,7 +992,12 @@ def score_property(
         score = min(1.0, score + spend_bonus * willingness_to_spend_score(parcel, as_of_year))
 
     living_area_sqft = parcel.get("living_area_sqft")
-    if year_source == UNKNOWN:
+    if year_source == UNKNOWN and renovation_suggested(parcel, _current_year(as_of_year), property_age_threshold_years):
+        built_reason = (
+            f"Build year is recorded as 1900, a common placeholder; the effective year {parcel['effective_year_built']} "
+            "suggests renovation, so age scored neutral."
+        )
+    elif year_source == UNKNOWN:
         built_reason = "Build year is recorded as 1900, a common placeholder, and no effective year is on file: age scored neutral."
     elif year_source == ACTUAL:
         built_reason = (

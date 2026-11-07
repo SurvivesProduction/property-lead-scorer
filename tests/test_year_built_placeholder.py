@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from extscorer.digest.copy import describe_lead
-from extscorer.normalize.year_built import ACTUAL, EFFECTIVE_FALLBACK, UNKNOWN, resolve_year_built
+from extscorer.normalize.year_built import ACTUAL, EFFECTIVE_FALLBACK, UNKNOWN, renovation_suggested, resolve_year_built
 from extscorer.scoring.basic import PLACEHOLDER_NEUTRAL_AGE_SCORE, property_age_score, rank_candidates, score_property
 
 _AS_OF = 2026
@@ -29,7 +29,7 @@ def _house(year=1900, effective=None, **kw):
     (_house(None), True, (None, ACTUAL)),
 ])
 def test_resolve_year_built(parcel, switch, expected) -> None:
-    assert resolve_year_built(parcel, switch) == expected
+    assert resolve_year_built(parcel, switch, _AS_OF) == expected
 
 
 def test_the_switch_is_off_by_default() -> None:
@@ -53,9 +53,22 @@ def test_a_placeholder_with_no_effective_year_scores_a_neutral_age_and_stays_qua
     assert any("placeholder" in r and "neutral" in r for r in lead.reasons)
 
 
-def test_an_effective_year_that_makes_the_house_too_new_disqualifies_it() -> None:
-    assert score_property(_house(1900, 2015), as_of_year=_AS_OF, year_built_placeholder_fallback=True) is None
-    assert score_property(_house(1900, 2015), as_of_year=_AS_OF) is not None  # switch off: still the recorded 1900
+def test_a_fallback_never_disqualifies_an_effective_year_that_is_too_recent_gives_a_neutral_age() -> None:
+    house = _house(1900, 2015)  # effective year 2015 would make it 11 years old
+    lead = score_property(house, as_of_year=_AS_OF, year_built_placeholder_fallback=True)
+    assert lead is not None and lead.year_built_source == UNKNOWN
+    assert lead.property_component == PLACEHOLDER_NEUTRAL_AGE_SCORE and lead.siding_component == 0.5
+    assert any("effective year 2015" in r and "suggests renovation" in r for r in lead.reasons)
+    assert renovation_suggested(house, _AS_OF) is True
+    assert score_property(house, as_of_year=_AS_OF) is not None  # switch off: still the recorded 1900
+
+
+def test_the_age_guard_boundary_is_the_scoring_threshold() -> None:
+    assert resolve_year_built(_house(1900, 2006), True, 2026, 20) == (2006, EFFECTIVE_FALLBACK)   # exactly 20 years: usable
+    assert resolve_year_built(_house(1900, 2007), True, 2026, 20) == (None, UNKNOWN)               # 19 years: renovation guard
+    assert resolve_year_built(_house(1900, 2007), True, 2026, 15) == (2007, EFFECTIVE_FALLBACK)    # a different threshold is respected
+    assert renovation_suggested(_house(1900, None), 2026) is False and renovation_suggested(_house(1900, 1900), 2026) is False
+    assert renovation_suggested(_house(1850, 2015), 2026) is False
 
 
 def test_the_fallback_lowers_a_placeholder_house_and_leaves_other_houses_alone() -> None:
