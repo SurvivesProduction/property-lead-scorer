@@ -78,7 +78,7 @@ def test_rank_candidates_passes_the_switch_and_the_digest_words_the_clause() -> 
     leads = rank_candidates([_house(1900, 1985)], as_of_year=_AS_OF, year_built_placeholder_fallback=True)
     assert leads[0].year_built_source == EFFECTIVE_FALLBACK
     text = describe_lead(_house(1900, 1985), _AS_OF, year_built_placeholder_fallback=True)
-    assert "placeholder" in text and "effective year is 1985" in text and "built in 1900 (126 years old)" not in text
+    assert "placeholder" in text and "effective year is 1985" in text and "built in 1900 (126 years old)" not in text.lower()
     unknown = describe_lead(_house(1900, None), _AS_OF, year_built_placeholder_fallback=True)
     assert "real age is unknown" in unknown
-    assert "built in 1900 (126 years old)" in describe_lead(_house(1900, 1985), _AS_OF)  # switch off: unchanged
+    assert "built in 1900 (126 years old)" in describe_lead(_house(1900, 1985), _AS_OF).lower()  # switch off: unchanged
