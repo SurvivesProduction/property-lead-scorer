@@ -214,6 +214,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+from extscorer.normalize.walls import is_masonry_exterior
 from extscorer.normalize.permits import OTHER_EXTERIOR, SIDING, dated_permits_by_class
 
 # Proposed defaults -- see module docstring's "Real-data recalibration"
@@ -823,8 +824,21 @@ def real_siding_age_score(
     return 1.0 - math.exp(-years_since_redone / decay_years)
 
 
+def masonry_roof_only(parcel: dict[str, Any]) -> bool:
+    """True for a masonry-only exterior (brick, stone, stucco, concrete: see `extscorer.normalize.walls`) with no
+    siding permit on file. Such a house cannot be re-sided, so it is a roof-only candidate, not a siding lead.
+    A real siding permit on a house recorded as masonry is a data conflict; the permit evidence wins, so the
+    normal siding score applies and the house is not flagged."""
+    if not is_masonry_exterior(parcel):
+        return False
+    return not dated_permits_by_class(parcel.get("permit_history"))[SIDING]
+
+
 def siding_score(
-    parcel: dict[str, Any], as_of_year: int | None = None, permit_class_split: bool = False
+    parcel: dict[str, Any],
+    as_of_year: int | None = None,
+    permit_class_split: bool = False,
+    masonry_siding_zero: bool = False,
 ) -> float | None:
     """The one unified siding signal `score_property` actually uses --
     dispatches purely on each parcel's own `permit_data_available` flag,
@@ -847,6 +861,8 @@ def siding_score(
     constants; call `siding_age_score`/`real_siding_age_score` directly
     with explicit overrides if a caller needs to tune those.
     """
+    if masonry_siding_zero and masonry_roof_only(parcel):
+        return 0.0
     if parcel.get("permit_data_available"):
         return real_siding_age_score(parcel, as_of_year=as_of_year, permit_class_split=permit_class_split)
     return siding_age_score(parcel)
@@ -874,6 +890,9 @@ class LeadScore:
     # otherwise; the caller can't tell which mode produced this value from
     # the field alone, only from the parcel's own `permit_data_available`.
     siding_component: float | None = None
+    # True when the masonry rule fired (`masonry_roof_only` with `masonry_siding_zero` on): the siding component is 0
+    # and the house is a roof-only candidate. Stored on the parcel; nothing selects on it yet.
+    roof_only_candidate: bool = False
 
 
 def score_property(
@@ -892,6 +911,7 @@ def score_property(
     as_of_year: int | None = None,
     permit_class_split: bool = False,
     spend_bonus: float = 0.0,
+    masonry_siding_zero: bool = False,
 ) -> LeadScore | None:
     """Score one parcel as an exterior-renovation-lead candidate, or None if it doesn't qualify.
 
@@ -938,7 +958,7 @@ def score_property(
 
     siding_component: float | None = None
     if enable_siding_signal:
-        siding_component = siding_score(parcel, as_of_year, permit_class_split)
+        siding_component = siding_score(parcel, as_of_year, permit_class_split, masonry_siding_zero)
         if siding_component is not None:
             weighted_sum += siding_weight * siding_component
             total_weight += siding_weight
@@ -964,9 +984,12 @@ def score_property(
             else "No storm-event history on file yet."
         ),
     ]
+    roof_only = bool(enable_siding_signal and masonry_siding_zero and masonry_roof_only(parcel))
     if enable_siding_signal and siding_component is not None:
         exterior_wall_1 = parcel.get("exterior_wall_1")
-        if parcel.get("permit_data_available"):
+        if roof_only:
+            reasons.append(f"Exterior wall: {exterior_wall_1}: masonry cannot be re-sided, so roof-only candidate.")
+        elif parcel.get("permit_data_available"):
             most_recent = parcel.get("most_recent_exterior_permit_date")
             if most_recent is not None:
                 reasons.append(
@@ -996,6 +1019,7 @@ def score_property(
         living_area_sqft=living_area_sqft,
         reasons=tuple(reasons),
         siding_component=siding_component,
+        roof_only_candidate=roof_only,
     )
 
 
@@ -1015,6 +1039,7 @@ def rank_candidates(
     as_of_year: int | None = None,
     permit_class_split: bool = False,
     spend_bonus: float = 0.0,
+    masonry_siding_zero: bool = False,
 ) -> list[LeadScore]:
     """Score and rank every qualifying parcel, highest score first.
 
@@ -1048,6 +1073,7 @@ def rank_candidates(
             as_of_year=as_of_year,
             permit_class_split=permit_class_split,
             spend_bonus=spend_bonus,
+            masonry_siding_zero=masonry_siding_zero,
         )
         if lead is not None:
             scored.append(lead)
