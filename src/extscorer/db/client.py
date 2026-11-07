@@ -273,6 +273,22 @@ def parcels_for_client(conn: psycopg.Connection, client_id: str) -> list[dict[st
         return cur.fetchall()
 
 
+def update_parcel_year_built_sources(conn: psycopg.Connection, assignments: list[tuple[Any, str]]) -> int:
+    """Set `year_built_source` on many parcels by primary key (`id`) in ONE transaction: all or none.
+
+    `assignments` is `[(parcel_id, source), ...]` with source in actual / effective_fallback / unknown (the column's CHECK
+    constraint rejects anything else and rolls the whole batch back). Only `year_built_source` (and `updated_at`) change.
+    Needs migration 014. Returns the number of rows updated.
+    """
+    with conn.cursor() as cur:
+        cur.executemany(
+            "update parcels set year_built_source = %s, updated_at = now() where id = %s",
+            [(source, parcel_id) for parcel_id, source in assignments],
+        )
+    conn.commit()
+    return len(assignments)
+
+
 def update_parcel_roof_only_flags(conn: psycopg.Connection, assignments: list[tuple[Any, bool]]) -> int:
     """Set `roof_only_candidate` on many parcels by primary key (`id`) in ONE transaction: all or none.
 

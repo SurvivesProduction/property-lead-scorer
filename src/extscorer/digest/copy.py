@@ -42,6 +42,7 @@ from __future__ import annotations
 from typing import Any
 
 from extscorer.normalize.permits import SIDING, dated_permits_by_class
+from extscorer.normalize.year_built import EFFECTIVE_FALLBACK, UNKNOWN, resolve_year_built
 from extscorer.scoring.basic import masonry_roof_only
 from extscorer.scoring.basic import DEFAULT_CANOPY_OPTIMAL_PCT, permit_window_too_short, willingness_to_spend_score
 
@@ -148,6 +149,7 @@ def _capitalize_sentence(clauses: list[str]) -> str:
 def _describe_main_clauses(
     parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False, spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
+    year_built_placeholder_fallback: bool = False,
 ) -> list[str]:
     """Property age, siding, and canopy clauses, in that order -- the
     signals' own weight order (see `extscorer.scoring.basic`'s module
@@ -156,8 +158,12 @@ def _describe_main_clauses(
     """
     clauses: list[str] = []
 
-    year_built = parcel.get("year_built")
-    if year_built is not None:
+    year_built, year_source = resolve_year_built(parcel, year_built_placeholder_fallback)
+    if year_source == UNKNOWN:
+        clauses.append("recorded as built in 1900, a common placeholder, so its real age is unknown")
+    elif year_source == EFFECTIVE_FALLBACK:
+        clauses.append(f"recorded as built in 1900, a common placeholder; the assessor's effective year is {year_built} ({as_of_year - year_built} years old)")
+    elif year_built is not None:
         age = as_of_year - year_built
         clauses.append(f"built in {year_built} ({age} years old)")
 
@@ -191,6 +197,7 @@ def _describe_storm(parcel: dict[str, Any]) -> str | None:
 def describe_lead(
     parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False, spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
+    year_built_placeholder_fallback: bool = False,
 ) -> str:
     """One short, plain-language sentence explaining why a property made
     the list -- built from real signal values, not internal scores. Used
@@ -198,7 +205,7 @@ def describe_lead(
     the storm clause the way `describe_lead_parts` lets the HTML renderer
     do -- folds every clause (including storm) into one sentence.
     """
-    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero)
+    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero, year_built_placeholder_fallback)
     storm_clause = _describe_storm(parcel)
     if storm_clause is not None:
         clauses.append(storm_clause)
@@ -211,6 +218,7 @@ def describe_lead(
 def describe_lead_parts(
     parcel: dict[str, Any], as_of_year: int, permit_class_split: bool = False, spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
+    year_built_placeholder_fallback: bool = False,
 ) -> tuple[str, str | None]:
     """(main_sentence, storm_sentence) -- used by the HTML renderer to
     style the storm clause smaller/lighter than the real differentiating
@@ -218,7 +226,7 @@ def describe_lead_parts(
     `storm_sentence` is `None` when there's no storm data on file, same
     as every other "not on file" convention here.
     """
-    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero)
+    clauses = _describe_main_clauses(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero, year_built_placeholder_fallback)
     main_sentence = _capitalize_sentence(clauses) if clauses else "On our list based on property age."
 
     storm_clause = _describe_storm(parcel)
@@ -234,6 +242,7 @@ def render_digest_text(
     permit_class_split: bool = False,
     spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
+    year_built_placeholder_fallback: bool = False,
 ) -> str:
     """Plain-text digest body -- the email's `text` fallback.
 
@@ -262,7 +271,7 @@ def render_digest_text(
     )
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         lines.append(f"{i}. {parcel.get('address', 'Unknown address')}, {parcel.get('town', '')}")
-        lines.append(f"   {describe_lead(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero)}")
+        lines.append(f"   {describe_lead(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero, year_built_placeholder_fallback)}")
         source_url = parcel.get("source_url")
         if source_url:
             lines.append(f"   Verify this property: {source_url}")
@@ -306,6 +315,7 @@ def render_digest_html(
     permit_class_split: bool = False,
     spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
+    year_built_placeholder_fallback: bool = False,
 ) -> str:
     """A single self-contained HTML email -- inline styles only, no
     external assets, same rendering-reliability discipline as Tool 1's
@@ -328,7 +338,7 @@ def render_digest_html(
     for i, (lead, parcel) in enumerate(leads_with_parcels, start=1):
         address = _esc(parcel.get("address", "Unknown address"))
         town = _esc(parcel.get("town", ""))
-        main_sentence, storm_sentence = describe_lead_parts(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero)
+        main_sentence, storm_sentence = describe_lead_parts(parcel, as_of_year, permit_class_split, spend_bonus, masonry_siding_zero, year_built_placeholder_fallback)
         description = _esc(main_sentence)
         if storm_sentence is not None:
             # Smaller, lighter-weight, muted-color -- identical across
