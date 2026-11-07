@@ -273,6 +273,21 @@ def parcels_for_client(conn: psycopg.Connection, client_id: str) -> list[dict[st
         return cur.fetchall()
 
 
+def update_parcel_roof_only_flags(conn: psycopg.Connection, assignments: list[tuple[Any, bool]]) -> int:
+    """Set `roof_only_candidate` on many parcels by primary key (`id`) in ONE transaction: all or none.
+
+    `assignments` is `[(parcel_id, flag), ...]`. Only `roof_only_candidate` (and `updated_at`) change. Idempotent.
+    Needs migration 013. Returns the number of rows updated.
+    """
+    with conn.cursor() as cur:
+        cur.executemany(
+            "update parcels set roof_only_candidate = %s, updated_at = now() where id = %s",
+            [(flag, parcel_id) for parcel_id, flag in assignments],
+        )
+    conn.commit()
+    return len(assignments)
+
+
 def update_parcel_use_classes(conn: psycopg.Connection, assignments: list[tuple[Any, str]]) -> int:
     """Set `use_class` on many parcels by primary key (`id`) in ONE transaction: all or none.
 
