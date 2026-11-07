@@ -215,6 +215,7 @@ from datetime import date
 from typing import Any
 
 from extscorer.normalize.walls import is_masonry_exterior
+from extscorer.normalize.year_built import ACTUAL, UNKNOWN, renovation_suggested, resolve_year_built
 from extscorer.normalize.permits import OTHER_EXTERIOR, SIDING, dated_permits_by_class
 
 # Proposed defaults -- see module docstring's "Real-data recalibration"
@@ -321,6 +322,11 @@ DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH = 0.15
 DEFAULT_REAL_SIDING_VINYL_DECAY_YEARS = 18.0
 DEFAULT_REAL_SIDING_DURABLE_DECAY_YEARS = 35.0
 DEFAULT_REAL_SIDING_OTHER_DECAY_YEARS = 26.0
+
+
+# Property-age component for a parcel whose recorded year is the 1900 placeholder and which has no usable effective year:
+# neither "old" nor "new", so neutral (see `extscorer.normalize.year_built`).
+PLACEHOLDER_NEUTRAL_AGE_SCORE = 0.5
 
 
 def _current_year(as_of_year: int | None) -> int:
@@ -893,6 +899,9 @@ class LeadScore:
     # True when the masonry rule fired (`masonry_roof_only` with `masonry_siding_zero` on): the siding component is 0
     # and the house is a roof-only candidate. Stored on the parcel; nothing selects on it yet.
     roof_only_candidate: bool = False
+    # Where the build year used for scoring came from (`extscorer.normalize.year_built`): "actual", "effective_fallback"
+    # (recorded year 1900 replaced by the effective year) or "unknown" (1900 with no usable effective year: neutral age).
+    year_built_source: str = "actual"
 
 
 def score_property(
@@ -912,6 +921,7 @@ def score_property(
     permit_class_split: bool = False,
     spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
+    year_built_placeholder_fallback: bool = False,
 ) -> LeadScore | None:
     """Score one parcel as an exterior-renovation-lead candidate, or None if it doesn't qualify.
 
@@ -934,16 +944,28 @@ def score_property(
     disabled entirely for a caller that wants the pre-siding-signal
     behavior.
     """
-    year_built = parcel.get("year_built")
-    if year_built is None:
-        return None
-    age = _current_year(as_of_year) - year_built
-    if age < property_age_threshold_years:
-        return None
-
-    property_component = property_age_score(
-        parcel, property_age_threshold_years, property_age_decay_years, as_of_year
+    year_built, year_source = resolve_year_built(
+        parcel, year_built_placeholder_fallback, _current_year(as_of_year), property_age_threshold_years
     )
+    if year_source == UNKNOWN:
+        # 1900 placeholder with no usable effective year: neither disqualified nor treated as old; age scores neutral.
+        age = _current_year(as_of_year) - parcel["year_built"]
+    elif year_built is None:
+        return None
+    else:
+        age = _current_year(as_of_year) - year_built
+        if age < property_age_threshold_years:
+            return None
+    # The age and siding signals read the resolved year; storm keeps the recorded parcel (the recorded year only gates
+    # storms that predate the building, and a placeholder gates nothing).
+    scored = parcel if year_source == ACTUAL else {**parcel, "year_built": year_built}
+
+    if year_source == UNKNOWN:
+        property_component = PLACEHOLDER_NEUTRAL_AGE_SCORE
+    else:
+        property_component = property_age_score(
+            scored, property_age_threshold_years, property_age_decay_years, as_of_year
+        )
     canopy_component = canopy_score(
         parcel, canopy_optimal_pct, canopy_low_extreme_pct, canopy_high_extreme_pct
     )
@@ -958,7 +980,7 @@ def score_property(
 
     siding_component: float | None = None
     if enable_siding_signal:
-        siding_component = siding_score(parcel, as_of_year, permit_class_split, masonry_siding_zero)
+        siding_component = siding_score(scored, as_of_year, permit_class_split, masonry_siding_zero)
         if siding_component is not None:
             weighted_sum += siding_weight * siding_component
             total_weight += siding_weight
@@ -970,9 +992,25 @@ def score_property(
         score = min(1.0, score + spend_bonus * willingness_to_spend_score(parcel, as_of_year))
 
     living_area_sqft = parcel.get("living_area_sqft")
+    if year_source == UNKNOWN and renovation_suggested(parcel, _current_year(as_of_year), property_age_threshold_years):
+        built_reason = (
+            f"Build year is recorded as 1900, a common placeholder; the effective year {parcel['effective_year_built']} "
+            "suggests renovation, so age scored neutral."
+        )
+    elif year_source == UNKNOWN:
+        built_reason = "Build year is recorded as 1900, a common placeholder, and no effective year is on file: age scored neutral."
+    elif year_source == ACTUAL:
+        built_reason = (
+            f"Built in {year_built}, {age} years old ({_current_year(as_of_year)} - {year_built}), "
+            f"{age - property_age_threshold_years} years past the {property_age_threshold_years}-year threshold."
+        )
+    else:
+        built_reason = (
+            f"Build year is recorded as 1900, a common placeholder; the effective year {year_built} is used "
+            f"({age} years old, {age - property_age_threshold_years} past the {property_age_threshold_years}-year threshold)."
+        )
     reasons = [
-        f"Built in {year_built}, {age} years old ({_current_year(as_of_year)} - {year_built}), "
-        f"{age - property_age_threshold_years} years past the {property_age_threshold_years}-year threshold.",
+        built_reason,
         (
             f"{parcel['pct_tree_canopy_nearby']:.0f}% tree canopy nearby."
             if parcel.get("pct_tree_canopy_nearby") is not None
@@ -1015,11 +1053,12 @@ def score_property(
         property_component=property_component,
         canopy_component=canopy_component,
         storm_component=storm_component,
-        year_built=year_built,
+        year_built=parcel.get("year_built"),
         living_area_sqft=living_area_sqft,
         reasons=tuple(reasons),
         siding_component=siding_component,
         roof_only_candidate=roof_only,
+        year_built_source=year_source,
     )
 
 
@@ -1040,6 +1079,7 @@ def rank_candidates(
     permit_class_split: bool = False,
     spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
+    year_built_placeholder_fallback: bool = False,
 ) -> list[LeadScore]:
     """Score and rank every qualifying parcel, highest score first.
 
@@ -1074,6 +1114,7 @@ def rank_candidates(
             permit_class_split=permit_class_split,
             spend_bonus=spend_bonus,
             masonry_siding_zero=masonry_siding_zero,
+            year_built_placeholder_fallback=year_built_placeholder_fallback,
         )
         if lead is not None:
             scored.append(lead)
