@@ -95,6 +95,11 @@ M's own before/after tie-cluster comparison for the real ranking impact.
 `DEFAULT_PROPERTY_AGE_THRESHOLD_YEARS=20` (the hard qualifying gate, a
 different concept from the decay shape) is unchanged.
 
+## Unsidable walls (2026-11-11)
+
+With `masonry_siding_zero`, a masonry wall AND a log wall (Log Cabin, Logs, Log) score 0 on siding and set
+`roof_only_candidate`; "Log Siding" is a siding and is not affected. "Wood Frame" is unchanged (durable).
+
 ## Siding signal: real ground truth where available, a proxy everywhere else
 
 This module has ONE siding signal, `siding_score()`, dispatching between
@@ -214,7 +219,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from extscorer.normalize.walls import is_masonry_exterior
+from extscorer.normalize.walls import is_masonry_exterior, is_unsidable_exterior
 from extscorer.normalize.year_built import ACTUAL, UNKNOWN, renovation_suggested, resolve_year_built
 from extscorer.normalize.permits import OTHER_EXTERIOR, SIDING, dated_permits_by_class
 
@@ -831,11 +836,11 @@ def real_siding_age_score(
 
 
 def masonry_roof_only(parcel: dict[str, Any]) -> bool:
-    """True for a masonry-only exterior (brick, stone, stucco, concrete: see `extscorer.normalize.walls`) with no
-    siding permit on file. Such a house cannot be re-sided, so it is a roof-only candidate, not a siding lead.
-    A real siding permit on a house recorded as masonry is a data conflict; the permit evidence wins, so the
-    normal siding score applies and the house is not flagged."""
-    if not is_masonry_exterior(parcel):
+    """True for a masonry-only exterior (brick, stone, stucco, concrete) or a log exterior (Log Cabin, Logs; see
+    `extscorer.normalize.walls`) with no siding permit on file. Such a house cannot be re-sided, so it is a roof-only
+    candidate, not a siding lead. A real siding permit on a house recorded as masonry or log is a data conflict; the
+    permit evidence wins, so the normal siding score applies and the house is not flagged."""
+    if not is_unsidable_exterior(parcel):
         return False
     return not dated_permits_by_class(parcel.get("permit_history"))[SIDING]
 

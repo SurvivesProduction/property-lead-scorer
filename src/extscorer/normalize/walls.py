@@ -12,6 +12,11 @@ Rules, from the real values on file:
   those are partly sidable, so they keep the normal siding score;
 - fiber-cement board ("Cement Board", "Fbr cement") is a real siding product and is never masonry;
 - a second wall (`exterior_wall_2`) that names a sidable material also keeps the normal score.
+
+Log exteriors (2026-11-11) follow the same rule. A log house ("Log Cabin", "Logs", "Log", or logs with a masonry
+veneer such as "Log Cabin/Stone Veneer") cannot be re-sided either, so `is_log_exterior` says so and
+`masonry_roof_only` treats it like masonry: siding score 0, flagged roof-only. Matched as WHOLE values, not by the word
+"log": "Log Siding" is a siding profile on an ordinary frame and stays a normal siding lead.
 """
 from __future__ import annotations
 
@@ -47,3 +52,32 @@ def is_masonry_exterior(parcel: dict[str, Any]) -> bool:
         return False
     wall_2 = (parcel.get("exterior_wall_2") or "").lower().strip()
     return not wall_2 or is_masonry_text(wall_2) or not _names_sidable_material(wall_2)
+
+
+_LOG_VALUES = frozenset({"log", "logs", "log cabin", "log cabins"})
+
+
+def _normalized(text: str | None) -> str:
+    return " ".join((text or "").lower().split())
+
+
+def is_log_text(wall: str | None) -> bool:
+    """True when the wall is logs: every `/`-separated part is a log value or masonry-only text, and at least one part is
+    a log value ("Log Cabin", "Logs", "Log Cabin/Stone Veneer"). "Log Siding" is not: it is a siding."""
+    parts = [_normalized(part) for part in re.split(r"[/,]", wall or "") if part.strip()]
+    if not parts or not any(part in _LOG_VALUES for part in parts):
+        return False
+    return all(part in _LOG_VALUES or is_masonry_text(part) for part in parts)
+
+
+def is_log_exterior(parcel: dict[str, Any]) -> bool:
+    """The parcel's primary wall is logs and its second wall (if any) does not add a sidable material."""
+    if not is_log_text(parcel.get("exterior_wall_1")):
+        return False
+    wall_2 = (parcel.get("exterior_wall_2") or "").lower().strip()
+    return not wall_2 or is_log_text(wall_2) or is_masonry_text(wall_2) or not _names_sidable_material(wall_2)
+
+
+def is_unsidable_exterior(parcel: dict[str, Any]) -> bool:
+    """Masonry or logs: a wall that cannot be re-sided."""
+    return is_masonry_exterior(parcel) or is_log_exterior(parcel)

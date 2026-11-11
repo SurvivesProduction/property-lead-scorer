@@ -54,7 +54,10 @@ _EXTERIOR_WHOLE_WORD_PATTERN = re.compile(r"\b(?:siding|sided|sidewalls?|side wa
 # work was never built, so it must not read as "recently redone" (which would
 # push a home DOWN the list for work that never happened). Compared
 # case-insensitively; PermitLink spells it "Canceled", other systems "Cancelled".
-NOT_BUILT_PERMIT_STATUSES = frozenset({"canceled", "cancelled", "denied", "void", "voided", "withdrawn"})
+#
+# The Killingly building office (2026-11) writes `cancel` and `deny`; they are listed as whole words. Statuses are
+# compared as a whole (stripped, lower-cased), never by substring, so "candidate" or "denying" do not match.
+NOT_BUILT_PERMIT_STATUSES = frozenset({"canceled", "cancelled", "cancel", "denied", "deny", "void", "voided", "withdrawn"})
 
 
 def is_exterior_permit(
