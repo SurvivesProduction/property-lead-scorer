@@ -104,6 +104,35 @@ def parse_permit_date(value: str | None) -> date | None:
     return None if parsed.year == _PLACEHOLDER_YEAR else parsed
 
 
+# Document scans (2026-11-11). Voluntown's permit export carries 1,628 entries (62% of its permit rows) that are scanned
+# plan files, not permits: type "Miscellaneous", number "Misc", reason "Scanned: 138 Preston City Rd Plans.pdf", all dated
+# on the few days the files were scanned (785 on 2025-03-11 alone). They say nothing about exterior work, so they are
+# kept in the stored history, tagged `document_scan`, and excluded from permit counts, the exterior/siding/roof
+# classifier and from deciding whether a parcel has permit visibility.
+DOCUMENT_SCAN_FLAG = "document_scan"
+_SCAN_REASON = re.compile(r"^\s*scanned\s*:", re.IGNORECASE)
+
+
+def is_document_scan(entry: dict[str, Any]) -> bool:
+    """True for an entry tagged `document_scan`, or one that has the scan pattern ("Scanned: ..." reason)."""
+    return bool(entry.get(DOCUMENT_SCAN_FLAG)) or bool(_SCAN_REASON.match(entry.get("reason") or ""))
+
+
+def tag_document_scans(permit_history: list[dict[str, Any]] | None) -> tuple[list[dict[str, Any]], int]:
+    """`(history with every scan entry tagged document_scan=True, number of entries newly tagged)`. Entries are kept."""
+    out, newly = [], 0
+    for entry in permit_history or []:
+        if is_document_scan(entry) and not entry.get(DOCUMENT_SCAN_FLAG):
+            entry, newly = {**entry, DOCUMENT_SCAN_FLAG: True}, newly + 1
+        out.append(entry)
+    return out, newly
+
+
+def real_permits(permit_history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """The history without its document scans: the entries that can speak for a parcel's permit visibility."""
+    return [entry for entry in permit_history or [] if not is_document_scan(entry)]
+
+
 def summarize_permit_history(permit_history: list[dict[str, Any]]) -> dict[str, Any]:
     """Derive the exterior-permit columns from a stored `permit_history` list.
 
@@ -113,7 +142,7 @@ def summarize_permit_history(permit_history: list[dict[str, Any]]) -> dict[str, 
     """
     exterior = [
         entry
-        for entry in permit_history
+        for entry in real_permits(permit_history)
         if parse_permit_date(entry.get("date_opened"))
         and is_exterior_permit(entry.get("permit_type"), entry.get("reason"), entry.get("status"))
     ]
@@ -259,7 +288,7 @@ def classify_exterior_permit(
 def dated_permits_by_class(permit_history: list[dict[str, Any]] | None) -> dict[str, list[date]]:
     """`{class: [dates, newest first]}` from a stored `permit_history`. Undated permits (drafts) are skipped."""
     out: dict[str, list[date]] = {SIDING: [], ROOF: [], OTHER_EXTERIOR: []}
-    for entry in permit_history or []:
+    for entry in real_permits(permit_history):
         opened = parse_permit_date(entry.get("date_opened"))
         if opened is None:
             continue

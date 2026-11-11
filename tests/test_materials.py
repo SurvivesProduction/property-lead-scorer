@@ -37,7 +37,7 @@ def test_wall_material_families_composite_matches_both() -> None:
 
 
 def test_wall_material_families_other_when_neither_keyword_matches() -> None:
-    assert wall_material_families("Average") == [FAMILY_OTHER]
+    assert wall_material_families("Comp./Wall Brd") == [FAMILY_OTHER]
 
 
 def test_wall_material_families_empty_for_missing_text() -> None:
@@ -50,7 +50,7 @@ def test_wall_material_families_agrees_with_scoring_dispatch_on_single_family_ca
     # still agree with what `_classify_wall_material` would dispatch to
     # -- they should never silently classify the same plain text two
     # different ways.
-    for raw, expected in [("Vinyl Siding", FAMILY_VINYL), ("Clapboard", FAMILY_DURABLE), ("Average", FAMILY_OTHER)]:
+    for raw, expected in [("Vinyl Siding", FAMILY_VINYL), ("Clapboard", FAMILY_DURABLE), ("Comp./Wall Brd", FAMILY_OTHER)]:
         families = wall_material_families(raw)
         assert len(families) == 1
         assert families[0] == expected == _classify_wall_material(raw)

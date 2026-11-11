@@ -44,7 +44,7 @@ from typing import Any
 from extscorer.normalize.permits import SIDING, dated_permits_by_class
 from extscorer.normalize.year_built import EFFECTIVE_FALLBACK, UNKNOWN, resolve_year_built
 from extscorer.normalize.walls import is_log_exterior
-from extscorer.scoring.basic import MATERIAL_ALUM_OR_VINYL, _classify_wall_material, masonry_roof_only
+from extscorer.scoring.basic import MATERIAL_ALUM_OR_VINYL, _classify_wall_material, masonry_roof_only, usable_wall_text
 from extscorer.scoring.basic import DEFAULT_CANOPY_OPTIMAL_PCT, permit_window_too_short, willingness_to_spend_score
 
 _MONTH_NAMES = (
@@ -99,7 +99,7 @@ def _describe_siding(
         wall = parcel.get("exterior_wall_1")
         unsidable = "logs" if is_log_exterior(parcel) else "masonry"
         return f"{wall} exterior: {unsidable} can't be re-sided, so this one is a roof job only"
-    exterior_wall_1 = parcel.get("exterior_wall_1")
+    exterior_wall_1 = usable_wall_text(parcel.get("exterior_wall_1"))
     if not exterior_wall_1:
         return None
     material = exterior_wall_1.lower()

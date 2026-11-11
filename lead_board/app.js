@@ -105,6 +105,7 @@
   const FAMILY_LABELS = {
     vinyl: 'Vinyl',
     durable_original: 'Durable (wood/brick/etc)',
+    fiber_cement: 'Fiber cement',
     other: 'Other',
     asphalt: 'Asphalt',
     metal: 'Metal',
