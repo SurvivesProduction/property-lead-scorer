@@ -23,7 +23,7 @@ duplicated in the board's export/build scripts.
 """
 from __future__ import annotations
 
-from extscorer.scoring.basic import _DURABLE_MATERIAL_KEYWORDS
+from extscorer.scoring.basic import _DURABLE_MATERIAL_KEYWORDS, _WOOD_LABELS, usable_wall_text
 
 FAMILY_VINYL = "vinyl"
 FAMILY_DURABLE = "durable_original"
@@ -42,13 +42,13 @@ def wall_material_families(exterior_wall_text: str | None) -> list[str]:
     module's own missing-data handling already uses) -- `['other']` when
     text is present but matches neither `vinyl` nor any durable keyword.
     """
-    if not exterior_wall_text:
+    if not usable_wall_text(exterior_wall_text):  # blank or a quality grade ("Average"): unknown
         return []
     text = exterior_wall_text.lower()
     families = []
     if "vinyl" in text:
         families.append(FAMILY_VINYL)
-    if any(keyword in text for keyword in _DURABLE_MATERIAL_KEYWORDS):
+    if " ".join(text.split()) in _WOOD_LABELS or any(keyword in text for keyword in _DURABLE_MATERIAL_KEYWORDS):
         families.append(FAMILY_DURABLE)
     if not families:
         families.append(FAMILY_OTHER)

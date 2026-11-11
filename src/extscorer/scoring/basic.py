@@ -102,6 +102,11 @@ different concept from the decay shape) is unchanged.
 at the build year, real mode decays at 22 years (vinyl 18, durable 35). Both numbers are named values with their
 evidence at `DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT` and can be set in the client `scoring:` block.
 
+Wall vocabulary (2026-11-11, second pass): "Al/Vinyl" (Plainfield) joins `aluminum_or_vinyl`; "PreFab Wd/T111",
+"Texture 1-11", "Vertical" and "Vertical Siding" are wood; "Hardi or Comp", "Fiberboard cem" and "Cmnt BD Siding" are
+fiber cement; "Asphalt" is asphalt siding (all durable). Quality grades in the wall field ("Average", "Minimum", ...)
+are unknown, as if blank (`is_quality_grade_wall`). "Comp./Wall Brd" stays unmapped (unknown, 0.5).
+
 ## Unsidable walls (2026-11-11)
 
 With `masonry_siding_zero`, a masonry wall AND a log wall (Log Cabin, Logs, Log) score 0 on siding and set
@@ -348,7 +353,10 @@ DEFAULT_REAL_SIDING_OTHER_DECAY_YEARS = 26.0
 # nearer vinyl. Wood Frame is not touched by any of this.
 DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT = 0.75
 DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS = 22.0
-_ALUM_OR_VINYL_LABELS = frozenset({"alum/vinyl siding"})
+# Killingly's "Alum/Vinyl Siding" and Plainfield's "Al/Vinyl" are the same thing: one card label for "aluminum or vinyl".
+# Every other combined spelling on file (2026-11-11 audit, all 17 towns) names a second material that is not aluminum
+# ("Vinyl Siding/Pre-Finish Metal", "Aluminum Siding/Clapboards"), so those are not in this set.
+_ALUM_OR_VINYL_LABELS = frozenset({"alum/vinyl siding", "al/vinyl"})
 MATERIAL_ALUM_OR_VINYL = "aluminum_or_vinyl"
 
 
@@ -535,7 +543,32 @@ _DURABLE_MATERIAL_KEYWORDS = (
     "masonite",
     "hardie",  # Hardie Plank/Board -- a real fiber-cement siding brand
     "hardy",  # the same product, misspelled on at least one real card
+    "hardi",  # "Hardi or Comp" (Mansfield)
+    "fiberboard",  # "Fiberboard cem" (Hampton): fiber cement
+    "cmnt",  # "Cmnt BD Siding": cement board
+    "asphalt",  # "Asphalt" keyed into the wall field: asphalt siding, scored like the other durable originals
 )
+
+
+# Whole labels that are wood siding profiles written in a card's own shorthand: "T1-11" (textured plywood) and board
+# siding laid vertically. Matched as whole values, not by substring ("vertical" is too generic to match inside text).
+_WOOD_LABELS = frozenset({"prefab wd/t111", "texture 1-11", "vertical", "vertical siding"})
+
+# Assessor quality grades keyed into the wall field by mistake ("Average", "Minimum"): not a material, so the wall is
+# unknown, exactly as if blank. Whole values only.
+_QUALITY_GRADE_LABELS = frozenset({
+    "minimum", "below average", "average", "above average", "avg", "fair", "good", "very good", "excellent", "poor",
+})
+
+
+def is_quality_grade_wall(wall: str | None) -> bool:
+    """True for a quality grade ("Average", "Minimum", ...) sitting in a wall field: no material information."""
+    return " ".join((wall or "").lower().split()) in _QUALITY_GRADE_LABELS
+
+
+def usable_wall_text(wall: str | None) -> str | None:
+    """The wall text if it names a material; None when blank or a quality grade (treated as unknown)."""
+    return None if not wall or is_quality_grade_wall(wall) else wall
 
 
 def _classify_wall_material(exterior_wall_1: str | None) -> str | None:
@@ -551,11 +584,13 @@ def _classify_wall_material(exterior_wall_1: str | None) -> str | None:
     misses real variants -- see that constant's own comment for the real
     pileup this fix resolved.
     """
-    if not exterior_wall_1:
+    if not usable_wall_text(exterior_wall_1):
         return None
     text = exterior_wall_1.lower()
     if " ".join(text.split()) in _ALUM_OR_VINYL_LABELS:
         return MATERIAL_ALUM_OR_VINYL
+    if " ".join(text.split()) in _WOOD_LABELS:
+        return "durable_original"
     if "vinyl" in text:
         return "vinyl"
     if any(keyword in text for keyword in _DURABLE_MATERIAL_KEYWORDS):
@@ -674,7 +709,7 @@ def siding_age_score(
     """
     exterior_wall_1 = parcel.get("exterior_wall_1")
     year_built = parcel.get("year_built")
-    if not exterior_wall_1 or year_built is None:
+    if not usable_wall_text(exterior_wall_1) or year_built is None:
         return 0.5
 
     material = _classify_wall_material(exterior_wall_1)
@@ -839,7 +874,7 @@ def real_siding_age_score(
 
     exterior_wall_1 = parcel.get("exterior_wall_1")
     year_built = parcel.get("year_built")
-    if not exterior_wall_1 or year_built is None:
+    if not usable_wall_text(exterior_wall_1) or year_built is None:
         return 0.5
 
     material = _classify_wall_material(exterior_wall_1)
@@ -1085,7 +1120,7 @@ def score_property(
     ]
     roof_only = bool(enable_siding_signal and masonry_siding_zero and masonry_roof_only(parcel))
     if enable_siding_signal and siding_component is not None:
-        exterior_wall_1 = parcel.get("exterior_wall_1")
+        exterior_wall_1 = usable_wall_text(parcel.get("exterior_wall_1"))
         if roof_only:
             reasons.append(f"Exterior wall: {exterior_wall_1}: masonry cannot be re-sided, so roof-only candidate.")
         elif parcel.get("permit_data_available"):
