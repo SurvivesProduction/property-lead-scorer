@@ -103,8 +103,9 @@ at the build year, real mode decays at 22 years (vinyl 18, durable 35). Both num
 evidence at `DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT` and can be set in the client `scoring:` block.
 
 Wall vocabulary (2026-11-11, second pass): "Al/Vinyl" (Plainfield) joins `aluminum_or_vinyl`; "PreFab Wd/T111",
-"Texture 1-11", "Vertical" and "Vertical Siding" are wood; "Hardi or Comp", "Fiberboard cem" and "Cmnt BD Siding" are
-fiber cement; "Asphalt" is asphalt siding (all durable). Quality grades in the wall field ("Average", "Minimum", ...)
+"Texture 1-11", "Vertical" and "Vertical Siding" are wood and "Asphalt" is asphalt siding (all durable). Fiber cement
+("Cement Board", "Hardy Plank", "Hardi or Comp", "Fiberboard cem", "Cmnt BD Siding", ...) is its own `fiber_cement`
+bucket: a flat 0.10 proxy and a 40-year real-mode decay (see `_FIBER_CEMENT_LABELS`). Quality grades in the wall field ("Average", "Minimum", ...)
 are unknown, as if blank (`is_quality_grade_wall`). "Comp./Wall Brd" stays unmapped (unknown, 0.5).
 
 ## Unsidable walls (2026-11-11)
@@ -353,10 +354,25 @@ DEFAULT_REAL_SIDING_OTHER_DECAY_YEARS = 26.0
 # nearer vinyl. Wood Frame is not touched by any of this.
 DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT = 0.75
 DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS = 22.0
+# Fiber cement (Hardie plank, cement board and their card spellings) is its own bucket (2026-11-11). It is mostly a
+# late-1990s-onward install that lasts decades, so a home that has it was probably re-sided recently and is a poor
+# siding lead: the proxy is a flat low score whatever the build year, and real mode decays slowly (40 years, longer
+# than durable's 35). Both are named, config-reachable values (`fiber_cement_score` / `fiber_cement_decay_years`), a
+# judgment call from the product's install era and lifespan, not a fitted number.
+DEFAULT_SIDING_FIBER_CEMENT_SCORE = 0.10
+DEFAULT_REAL_SIDING_FIBER_CEMENT_DECAY_YEARS = 40.0
 # Killingly's "Alum/Vinyl Siding" and Plainfield's "Al/Vinyl" are the same thing: one card label for "aluminum or vinyl".
 # Every other combined spelling on file (2026-11-11 audit, all 17 towns) names a second material that is not aluminum
 # ("Vinyl Siding/Pre-Finish Metal", "Aluminum Siding/Clapboards"), so those are not in this set.
 _ALUM_OR_VINYL_LABELS = frozenset({"alum/vinyl siding", "al/vinyl"})
+MATERIAL_FIBER_CEMENT = "fiber_cement"
+# Every fiber-cement label on file (all 17 towns, 2026-11-11), matched as WHOLE values. A label that adds another
+# material ("Clapboards/Cement Board", "Board & Batten/Hardie Plank", "Cement Board/Wood Shingles") is not in the set:
+# it keeps the durable family, because the other material may be the original siding.
+_FIBER_CEMENT_LABELS = frozenset({
+    "cement board", "fbr cement", "fibr/cem board", "fiber cement", "fibre cement", "hardy plank", "hardie plank",
+    "hardi plank", "hardie", "hardy", "hardi or comp", "cmnt bd siding", "fiberboard cem",
+})
 MATERIAL_ALUM_OR_VINYL = "aluminum_or_vinyl"
 
 
@@ -591,6 +607,8 @@ def _classify_wall_material(exterior_wall_1: str | None) -> str | None:
         return MATERIAL_ALUM_OR_VINYL
     if " ".join(text.split()) in _WOOD_LABELS:
         return "durable_original"
+    if " ".join(text.split()) in _FIBER_CEMENT_LABELS:
+        return MATERIAL_FIBER_CEMENT
     if "vinyl" in text:
         return "vinyl"
     if any(keyword in text for keyword in _DURABLE_MATERIAL_KEYWORDS):
@@ -675,6 +693,7 @@ def siding_age_score(
     durable_baseline_score: float = DEFAULT_SIDING_DURABLE_BASELINE_SCORE,
     percent_good_modifier_strength: float = DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH,
     alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
+    fiber_cement_score: float = DEFAULT_SIDING_FIBER_CEMENT_SCORE,
 ) -> float | None:
     """Score 0-1: how likely this property's exterior siding is original
     and overdue for replacement, from `exterior_wall_1` + `year_built`
@@ -729,6 +748,8 @@ def siding_age_score(
         base = _durable_material_age_score(
             year_built, durable_never_resided_year, durable_decay_years, durable_baseline_score
         )
+    elif material == MATERIAL_FIBER_CEMENT:
+        return fiber_cement_score  # flat: a recent install, whatever the year built (no percent-good nudge)
     elif material == MATERIAL_ALUM_OR_VINYL:
         # Weighted blend of the two curves at this build year (before the percent-good nudge); see the weight's comment.
         vinyl = _vinyl_siding_age_score(
@@ -818,6 +839,8 @@ def real_siding_age_score(
     permit_class_split: bool = False,
     alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
     alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
+    fiber_cement_score: float = DEFAULT_SIDING_FIBER_CEMENT_SCORE,
+    fiber_cement_decay_years: float = DEFAULT_REAL_SIDING_FIBER_CEMENT_DECAY_YEARS,
 ) -> float | None:
     """Score 0-1: real-mode siding material+age, using the direct
     `Siding:` field and real permit history together -- see module
@@ -884,6 +907,8 @@ def real_siding_age_score(
         decay_years = durable_decay_years
     elif material == MATERIAL_ALUM_OR_VINYL:
         decay_years = alum_vinyl_decay_years
+    elif material == MATERIAL_FIBER_CEMENT:
+        decay_years = fiber_cement_decay_years
     else:
         decay_years = other_decay_years
 
@@ -895,7 +920,9 @@ def real_siding_age_score(
             # weak evidence, and "no siding permit" must not read as "never redone".
             # A roof-only or windows-only history is treated like a town with no permit data: the
             # material-based proxy, whatever the length of the permit window.
-            return siding_age_score(parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight)
+            return siding_age_score(
+                parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight, fiber_cement_score=fiber_cement_score
+            )
     else:
         most_recent_exterior_permit_date = parcel.get("most_recent_exterior_permit_date")
     if most_recent_exterior_permit_date is not None:
@@ -905,7 +932,9 @@ def real_siding_age_score(
         # to anything before permit_history_since -- too short a window
         # to trust the absence as "never redone." Fall back to the
         # material+age-only proxy rather than year_built.
-        return siding_age_score(parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight)
+        return siding_age_score(
+                parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight, fiber_cement_score=fiber_cement_score
+            )
     else:
         effective_redo_year = year_built
 
@@ -934,6 +963,8 @@ def siding_score(
     masonry_siding_zero: bool = False,
     alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
     alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
+    fiber_cement_score: float = DEFAULT_SIDING_FIBER_CEMENT_SCORE,
+    fiber_cement_decay_years: float = DEFAULT_REAL_SIDING_FIBER_CEMENT_DECAY_YEARS,
 ) -> float | None:
     """The one unified siding signal `score_property` actually uses --
     dispatches purely on each parcel's own `permit_data_available` flag,
@@ -962,8 +993,11 @@ def siding_score(
         return real_siding_age_score(
             parcel, as_of_year=as_of_year, permit_class_split=permit_class_split,
             alum_vinyl_decay_years=alum_vinyl_decay_years, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight,
+            fiber_cement_score=fiber_cement_score, fiber_cement_decay_years=fiber_cement_decay_years,
         )
-    return siding_age_score(parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight)
+    return siding_age_score(
+                parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight, fiber_cement_score=fiber_cement_score
+            )
 
 
 @dataclass(frozen=True)
@@ -1016,6 +1050,8 @@ def score_property(
     year_built_placeholder_fallback: bool = False,
     alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
     alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
+    fiber_cement_score: float = DEFAULT_SIDING_FIBER_CEMENT_SCORE,
+    fiber_cement_decay_years: float = DEFAULT_REAL_SIDING_FIBER_CEMENT_DECAY_YEARS,
 ) -> LeadScore | None:
     """Score one parcel as an exterior-renovation-lead candidate, or None if it doesn't qualify.
 
@@ -1075,7 +1111,8 @@ def score_property(
     siding_component: float | None = None
     if enable_siding_signal:
         siding_component = siding_score(
-            scored, as_of_year, permit_class_split, masonry_siding_zero, alum_vinyl_vinyl_weight, alum_vinyl_decay_years
+            scored, as_of_year, permit_class_split, masonry_siding_zero, alum_vinyl_vinyl_weight, alum_vinyl_decay_years,
+            fiber_cement_score, fiber_cement_decay_years,
         )
         if siding_component is not None:
             weighted_sum += siding_weight * siding_component
@@ -1178,6 +1215,8 @@ def rank_candidates(
     year_built_placeholder_fallback: bool = False,
     alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
     alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
+    fiber_cement_score: float = DEFAULT_SIDING_FIBER_CEMENT_SCORE,
+    fiber_cement_decay_years: float = DEFAULT_REAL_SIDING_FIBER_CEMENT_DECAY_YEARS,
 ) -> list[LeadScore]:
     """Score and rank every qualifying parcel, highest score first.
 
@@ -1215,6 +1254,8 @@ def rank_candidates(
             year_built_placeholder_fallback=year_built_placeholder_fallback,
             alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight,
             alum_vinyl_decay_years=alum_vinyl_decay_years,
+            fiber_cement_score=fiber_cement_score,
+            fiber_cement_decay_years=fiber_cement_decay_years,
         )
         if lead is not None:
             scored.append(lead)
