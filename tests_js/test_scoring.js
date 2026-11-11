@@ -147,4 +147,35 @@ test('rankLeads: default weight 0 on jobSize/saleRecency leaves the default rank
   assert.strictEqual(ranked[0].lead_key, 'A');
 });
 
+test('computeScore: spend bonus adds spendBonus * spend after the average, capped at 1', () => {
+  const w = { property: 0.5, canopy: 0.15, storm: 0.05, siding: 0.3 };
+  const base = { property: 0.8, canopy: 0.4, storm: 1.0, siding: 0.6 };
+  const plain = computeScore(base, w);
+  assert.ok(Math.abs(computeScore({ ...base, spend: 1 / 3 }, w, 0.03) - (plain + 0.03 / 3)) < 1e-12);
+  assert.strictEqual(computeScore({ property: 1, canopy: 1, storm: 1, siding: 1, spend: 1 }, w, 0.03), 1);
+});
+
+test('computeScore: spend bonus is off at 0 / undefined, and a missing spend adds nothing', () => {
+  const w = { property: 0.5, canopy: 0.15, storm: 0.05, siding: 0.3 };
+  const c = { property: 0.8, canopy: 0.4, storm: 1.0, siding: 0.6, spend: 1 };
+  const plain = computeScore({ ...c, spend: undefined }, w);
+  assert.strictEqual(computeScore(c, w, 0), plain);
+  assert.strictEqual(computeScore(c, w), plain);
+  assert.strictEqual(computeScore({ ...c, spend: undefined }, w, 0.03), plain);
+});
+
+test('computeScore: spend bonus still applies when every weight is zero (Python adds it to 0)', () => {
+  assert.ok(Math.abs(computeScore({ property: 0.8, spend: 1 }, { property: 0 }, 0.03) - 0.03) < 1e-12);
+});
+
+test('rankLeads: passes parcel.components.spend and spendBonus through', () => {
+  const mk = (k, id, spend) => ({ lead_key: k, town: 'X', year_built: 1950, living_area_sqft: 1000, parcel_id: id, components: { property: 0.5, canopy: 0.5, storm: 1.0, siding: 0.5, spend } });
+  const weights = { property: 0.5, canopy: 0.15, storm: 0.05, siding: 0.3, jobSize: 0, saleRecency: 0 };
+  const ranked = rankLeads([mk('A', '1', 0), mk('B', '2', 1)], weights, new Map(), new Map(), 0.03);
+  assert.strictEqual(ranked[0].lead_key, 'B');
+  const off = rankLeads([mk('A', '1', 0), mk('B', '2', 1)], weights, new Map(), new Map(), 0);
+  assert.strictEqual(off[0].lead_key, 'B'); // tie broken by reversed parcel_id, not by spend
+  assert.strictEqual(off[0].score, off[1].score);
+});
+
 run();
