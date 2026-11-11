@@ -40,13 +40,17 @@
  * `enable_siding_signal=False` path for siding specifically, generalized
  * here to every component.
  *
+ * `spendBonus` (config `spend_bonus`, default off) is applied AFTER the
+ * weighted average, exactly where `score_property` applies it; it is not a
+ * slider weight and never enters the average itself.
+ *
  * Fixed combine order matches `score_property`'s own: property, canopy,
  * storm, then siding, jobSize, saleRecency -- floating-point addition is
  * not associative, so this order must stay fixed for bit-for-bit parity.
  */
 const COMPONENT_ORDER = ['property', 'canopy', 'storm', 'siding', 'jobSize', 'saleRecency'];
 
-function computeScore(components, weights) {
+function computeScore(components, weights, spendBonus) {
   let weightedSum = 0;
   let totalWeight = 0;
   for (const key of COMPONENT_ORDER) {
@@ -56,7 +60,16 @@ function computeScore(components, weights) {
     weightedSum += weight * value;
     totalWeight += weight;
   }
-  return totalWeight > 0 ? weightedSum / totalWeight : 0;
+  let score = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  // `score_property`'s spend bonus: a 0-1 `spend` component (recent window/
+  // door/deck/porch permits, see `willingness_to_spend_score`) adds at most
+  // `spendBonus` on top of the weighted average, capped at 1. Applies only
+  // when the config's `spend_bonus` is > 0; a row with no `spend` component
+  // (every teaser row, whose embedded score is computed without it) adds 0.
+  if (spendBonus > 0 && components.spend !== null && components.spend !== undefined) {
+    score = Math.min(1, score + spendBonus * components.spend);
+  }
+  return score;
 }
 
 /**
@@ -168,7 +181,7 @@ function compareLeadsDesc(a, b) {
  * relative to the whole population, so it must never be recomputed
  * against an already-filtered subset.
  */
-function rankLeads(parcels, weights, jobSizeComponents, saleRecencyComponents) {
+function rankLeads(parcels, weights, jobSizeComponents, saleRecencyComponents, spendBonus) {
   const scored = parcels.map((parcel) => {
     const components = {
       property: parcel.components.property,
@@ -177,8 +190,9 @@ function rankLeads(parcels, weights, jobSizeComponents, saleRecencyComponents) {
       siding: parcel.components.siding,
       jobSize: jobSizeComponents ? jobSizeComponents.get(parcel.lead_key) : undefined,
       saleRecency: saleRecencyComponents ? saleRecencyComponents.get(parcel.lead_key) : undefined,
+      spend: parcel.components.spend,
     };
-    const score = computeScore(components, weights);
+    const score = computeScore(components, weights, spendBonus);
     return Object.assign({}, parcel, { score, _components: components });
   });
   scored.sort(compareLeadsDesc);

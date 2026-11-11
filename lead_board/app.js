@@ -13,6 +13,8 @@
   const DATA = window.LEAD_BOARD_DATA;
   const PARCELS = DATA.parcels;
   const SOLD_TOWNS = DATA.metadata.sold_towns || [];
+  // The Python scorer's `spend_bonus` config value (0 / absent = off).
+  const SPEND_BONUS = Number((DATA.metadata.weights || {}).spend_bonus) || 0;
   const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
 
   // Set only by `build_lead_board.py`'s `--teaser` build (2026-10-30
@@ -414,8 +416,8 @@
     // "7th among what's visible," and the arrow means "moved within
     // this same visible set," not a leftover global DB rank.
     const filtered = applyFilters(PARCELS, state, SOLD_TOWNS, jobSizeByLeadKey);
-    const currentRanked = rankLeads(filtered, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey);
-    const defaultRankedSameFilters = rankLeads(filtered, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey);
+    const currentRanked = rankLeads(filtered, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey, SPEND_BONUS);
+    const defaultRankedSameFilters = rankLeads(filtered, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey, SPEND_BONUS);
     const defaultRankByLeadKey = new Map(defaultRankedSameFilters.map((lead) => [lead.lead_key, lead.rank]));
 
     el('result-count').textContent = `${filtered.length} leads match current filters`;
