@@ -137,3 +137,14 @@ def test_scans_are_not_permits() -> None:
     assert dated_permits_by_class(only_scans) == {SIDING: [], "roof": [], "other_exterior": []}
     assert summarize_permit_history(only_scans)["exterior_permit_count"] == 0
     assert summarize_permit_history(history)["exterior_permit_count"] == 1
+
+
+@pytest.mark.parametrize("label", _FIBER_CEMENT)
+def test_fiber_cement_has_its_own_board_filter_family(label) -> None:
+    from extscorer.normalize.materials import FAMILY_FIBER_CEMENT
+
+    assert wall_material_families(label) == [FAMILY_FIBER_CEMENT]
+
+
+def test_composite_fiber_cement_label_keeps_the_durable_filter_family() -> None:
+    assert wall_material_families("Clapboards/Cement Board") == [FAMILY_DURABLE]

@@ -23,11 +23,12 @@ duplicated in the board's export/build scripts.
 """
 from __future__ import annotations
 
-from extscorer.scoring.basic import _DURABLE_MATERIAL_KEYWORDS, _WOOD_LABELS, usable_wall_text
+from extscorer.scoring.basic import _DURABLE_MATERIAL_KEYWORDS, _FIBER_CEMENT_LABELS, _WOOD_LABELS, usable_wall_text
 
 FAMILY_VINYL = "vinyl"
 FAMILY_DURABLE = "durable_original"
 FAMILY_OTHER = "other"
+FAMILY_FIBER_CEMENT = "fiber_cement"  # its own filter entry (2026-11-11): scored as a recent install, not as a durable original
 
 
 def wall_material_families(exterior_wall_text: str | None) -> list[str]:
@@ -45,6 +46,8 @@ def wall_material_families(exterior_wall_text: str | None) -> list[str]:
     if not usable_wall_text(exterior_wall_text):  # blank or a quality grade ("Average"): unknown
         return []
     text = exterior_wall_text.lower()
+    if " ".join(text.split()) in _FIBER_CEMENT_LABELS:  # whole label only; "Clapboards/Cement Board" stays durable
+        return [FAMILY_FIBER_CEMENT]
     families = []
     if "vinyl" in text:
         families.append(FAMILY_VINYL)
