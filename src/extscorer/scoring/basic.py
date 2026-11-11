@@ -95,6 +95,18 @@ M's own before/after tie-cluster comparison for the real ranking impact.
 `DEFAULT_PROPERTY_AGE_THRESHOLD_YEARS=20` (the hard qualifying gate, a
 different concept from the decay shape) is unchanged.
 
+## Material buckets (2026-11-11)
+
+`_classify_wall_material` has four buckets: `vinyl`, `durable_original`, `aluminum_or_vinyl` and `other`.
+`aluminum_or_vinyl` is the whole label "Alum/Vinyl Siding": the proxy is 75% the vinyl curve + 25% the durable curve
+at the build year, real mode decays at 22 years (vinyl 18, durable 35). Both numbers are named values with their
+evidence at `DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT` and can be set in the client `scoring:` block.
+
+## Unsidable walls (2026-11-11)
+
+With `masonry_siding_zero`, a masonry wall AND a log wall (Log Cabin, Logs, Log) score 0 on siding and set
+`roof_only_candidate`; "Log Siding" is a siding and is not affected. "Wood Frame" is unchanged (durable).
+
 ## Siding signal: real ground truth where available, a proxy everywhere else
 
 This module has ONE siding signal, `siding_score()`, dispatching between
@@ -214,7 +226,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from extscorer.normalize.walls import is_masonry_exterior
+from extscorer.normalize.walls import is_masonry_exterior, is_unsidable_exterior
 from extscorer.normalize.year_built import ACTUAL, UNKNOWN, renovation_suggested, resolve_year_built
 from extscorer.normalize.permits import OTHER_EXTERIOR, SIDING, dated_permits_by_class
 
@@ -322,6 +334,22 @@ DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH = 0.15
 DEFAULT_REAL_SIDING_VINYL_DECAY_YEARS = 18.0
 DEFAULT_REAL_SIDING_DURABLE_DECAY_YEARS = 35.0
 DEFAULT_REAL_SIDING_OTHER_DECAY_YEARS = 26.0
+# "Alum/Vinyl Siding" (2026-11-11) is its own bucket: Killingly's assessor uses one label for a house that has
+# aluminum OR vinyl, so the material is not known. It is matched as the WHOLE label (it used to fall into "vinyl" by
+# substring) and scored as a weighted blend. The weight is a named, config-reachable value
+# (`alum_vinyl_vinyl_weight` / `alum_vinyl_decay_years` in the client `scoring:` block), not a constant buried in the
+# code.
+#
+# Evidence for 75% vinyl / 25% aluminum (2026-11-11): when the town's own file relabelled rows that the state data
+# called "Alum/Vinyl Siding", 218 became "Vinyl Siding" and 3 became "Aluminum Siding"; and across the town file there
+# are 1,513 "Vinyl Siding" rows against 30 "Aluminum Siding". The label leans vinyl, so the proxy leans vinyl: 0.75 x
+# the vinyl curve + 0.25 x the durable (aluminum) curve at the same build year. The 75/25 split is a judgment call
+# made from that lean, not a fitted number; the real-mode decay of 22 years sits between vinyl (18) and durable (35),
+# nearer vinyl. Wood Frame is not touched by any of this.
+DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT = 0.75
+DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS = 22.0
+_ALUM_OR_VINYL_LABELS = frozenset({"alum/vinyl siding"})
+MATERIAL_ALUM_OR_VINYL = "aluminum_or_vinyl"
 
 
 # Property-age component for a parcel whose recorded year is the 1900 placeholder and which has no usable effective year:
@@ -526,6 +554,8 @@ def _classify_wall_material(exterior_wall_1: str | None) -> str | None:
     if not exterior_wall_1:
         return None
     text = exterior_wall_1.lower()
+    if " ".join(text.split()) in _ALUM_OR_VINYL_LABELS:
+        return MATERIAL_ALUM_OR_VINYL
     if "vinyl" in text:
         return "vinyl"
     if any(keyword in text for keyword in _DURABLE_MATERIAL_KEYWORDS):
@@ -609,6 +639,7 @@ def siding_age_score(
     durable_decay_years: float = DEFAULT_SIDING_DURABLE_DECAY_YEARS,
     durable_baseline_score: float = DEFAULT_SIDING_DURABLE_BASELINE_SCORE,
     percent_good_modifier_strength: float = DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH,
+    alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
 ) -> float | None:
     """Score 0-1: how likely this property's exterior siding is original
     and overdue for replacement, from `exterior_wall_1` + `year_built`
@@ -663,6 +694,23 @@ def siding_age_score(
         base = _durable_material_age_score(
             year_built, durable_never_resided_year, durable_decay_years, durable_baseline_score
         )
+    elif material == MATERIAL_ALUM_OR_VINYL:
+        # Weighted blend of the two curves at this build year (before the percent-good nudge); see the weight's comment.
+        vinyl = _vinyl_siding_age_score(
+            year_built,
+            unknown_reside_cutoff_year,
+            replacement_age_start_year,
+            replacement_age_end_year,
+            too_new_year,
+            vinyl_not_prime_score,
+            vinyl_moderate_high_score,
+            vinyl_moderate_low_score,
+            vinyl_near_zero_score,
+        )
+        durable = _durable_material_age_score(
+            year_built, durable_never_resided_year, durable_decay_years, durable_baseline_score
+        )
+        base = alum_vinyl_vinyl_weight * vinyl + (1 - alum_vinyl_vinyl_weight) * durable
     else:
         return 0.5
 
@@ -733,6 +781,8 @@ def real_siding_age_score(
     other_decay_years: float = DEFAULT_REAL_SIDING_OTHER_DECAY_YEARS,
     as_of_year: int | None = None,
     permit_class_split: bool = False,
+    alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
+    alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
 ) -> float | None:
     """Score 0-1: real-mode siding material+age, using the direct
     `Siding:` field and real permit history together -- see module
@@ -797,6 +847,8 @@ def real_siding_age_score(
         decay_years = vinyl_decay_years
     elif material == "durable_original":
         decay_years = durable_decay_years
+    elif material == MATERIAL_ALUM_OR_VINYL:
+        decay_years = alum_vinyl_decay_years
     else:
         decay_years = other_decay_years
 
@@ -808,7 +860,7 @@ def real_siding_age_score(
             # weak evidence, and "no siding permit" must not read as "never redone".
             # A roof-only or windows-only history is treated like a town with no permit data: the
             # material-based proxy, whatever the length of the permit window.
-            return siding_age_score(parcel)
+            return siding_age_score(parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight)
     else:
         most_recent_exterior_permit_date = parcel.get("most_recent_exterior_permit_date")
     if most_recent_exterior_permit_date is not None:
@@ -818,7 +870,7 @@ def real_siding_age_score(
         # to anything before permit_history_since -- too short a window
         # to trust the absence as "never redone." Fall back to the
         # material+age-only proxy rather than year_built.
-        return siding_age_score(parcel)
+        return siding_age_score(parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight)
     else:
         effective_redo_year = year_built
 
@@ -831,11 +883,11 @@ def real_siding_age_score(
 
 
 def masonry_roof_only(parcel: dict[str, Any]) -> bool:
-    """True for a masonry-only exterior (brick, stone, stucco, concrete: see `extscorer.normalize.walls`) with no
-    siding permit on file. Such a house cannot be re-sided, so it is a roof-only candidate, not a siding lead.
-    A real siding permit on a house recorded as masonry is a data conflict; the permit evidence wins, so the
-    normal siding score applies and the house is not flagged."""
-    if not is_masonry_exterior(parcel):
+    """True for a masonry-only exterior (brick, stone, stucco, concrete) or a log exterior (Log Cabin, Logs; see
+    `extscorer.normalize.walls`) with no siding permit on file. Such a house cannot be re-sided, so it is a roof-only
+    candidate, not a siding lead. A real siding permit on a house recorded as masonry or log is a data conflict; the
+    permit evidence wins, so the normal siding score applies and the house is not flagged."""
+    if not is_unsidable_exterior(parcel):
         return False
     return not dated_permits_by_class(parcel.get("permit_history"))[SIDING]
 
@@ -845,6 +897,8 @@ def siding_score(
     as_of_year: int | None = None,
     permit_class_split: bool = False,
     masonry_siding_zero: bool = False,
+    alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
+    alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
 ) -> float | None:
     """The one unified siding signal `score_property` actually uses --
     dispatches purely on each parcel's own `permit_data_available` flag,
@@ -870,8 +924,11 @@ def siding_score(
     if masonry_siding_zero and masonry_roof_only(parcel):
         return 0.0
     if parcel.get("permit_data_available"):
-        return real_siding_age_score(parcel, as_of_year=as_of_year, permit_class_split=permit_class_split)
-    return siding_age_score(parcel)
+        return real_siding_age_score(
+            parcel, as_of_year=as_of_year, permit_class_split=permit_class_split,
+            alum_vinyl_decay_years=alum_vinyl_decay_years, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight,
+        )
+    return siding_age_score(parcel, alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight)
 
 
 @dataclass(frozen=True)
@@ -922,6 +979,8 @@ def score_property(
     spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
     year_built_placeholder_fallback: bool = False,
+    alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
+    alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
 ) -> LeadScore | None:
     """Score one parcel as an exterior-renovation-lead candidate, or None if it doesn't qualify.
 
@@ -980,7 +1039,9 @@ def score_property(
 
     siding_component: float | None = None
     if enable_siding_signal:
-        siding_component = siding_score(scored, as_of_year, permit_class_split, masonry_siding_zero)
+        siding_component = siding_score(
+            scored, as_of_year, permit_class_split, masonry_siding_zero, alum_vinyl_vinyl_weight, alum_vinyl_decay_years
+        )
         if siding_component is not None:
             weighted_sum += siding_weight * siding_component
             total_weight += siding_weight
@@ -1080,6 +1141,8 @@ def rank_candidates(
     spend_bonus: float = 0.0,
     masonry_siding_zero: bool = False,
     year_built_placeholder_fallback: bool = False,
+    alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
+    alum_vinyl_decay_years: float = DEFAULT_REAL_SIDING_ALUM_VINYL_DECAY_YEARS,
 ) -> list[LeadScore]:
     """Score and rank every qualifying parcel, highest score first.
 
@@ -1115,6 +1178,8 @@ def rank_candidates(
             spend_bonus=spend_bonus,
             masonry_siding_zero=masonry_siding_zero,
             year_built_placeholder_fallback=year_built_placeholder_fallback,
+            alum_vinyl_vinyl_weight=alum_vinyl_vinyl_weight,
+            alum_vinyl_decay_years=alum_vinyl_decay_years,
         )
         if lead is not None:
             scored.append(lead)
