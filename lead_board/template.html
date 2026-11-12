@@ -114,10 +114,21 @@
   .lead-built { color: var(--muted); font-size: 12px; }
   .badge { font-size: 11px; background: var(--badge-bg); color: var(--badge-ink); padding: 2px 8px; border-radius: 999px; }
   .lead-row-detail { margin-top: 8px; padding-left: 8px; }
-  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
-  .bar-label { width: 90px; color: var(--muted); text-transform: capitalize; }
-  .bar-track { flex: 1; height: 8px; background: var(--bar-track); border-radius: 4px; overflow: hidden; }
-  .bar-fill { height: 100%; background: var(--bar-fill); }
+  /* board-breakdown:start -- synced into the site's /jobs page by property-lead-scorer-full/scripts/refresh_site_teaser.py */
+  .bd-head, .bd-row { max-width: 360px; }
+  .bd-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .bd-score { font-size: 18px; font-weight: 700; line-height: 1; color: var(--sp-green, var(--accent)); }
+  .bd-head-text { font-size: 12px; color: var(--muted); }
+  .bd-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; font-size: 12px; line-height: 16px; }
+  .bd-label { flex: 0 0 92px; color: var(--ink); }
+  .bd-slot { flex: 0 0 72px; }
+  .bd-track { height: 6px; background: var(--bar-track); border-radius: 3px; overflow: hidden; }
+  .bd-fill { height: 100%; background: var(--sp-green, var(--bar-fill)); }
+  .bd-level { flex: 1 1 auto; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bd-share { flex: 0 0 auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .bd-constant .bd-label, .bd-constant .bd-same { color: var(--muted); }
+  .bd-same { flex: 1 1 auto; min-width: 0; font-style: italic; }
+  /* board-breakdown:end */
   .link-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
   .verify-link { font-size: 12px; color: var(--accent); display: inline-block; }
   .verify-link-none { color: var(--muted); font-style: italic; }

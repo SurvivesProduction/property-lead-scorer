@@ -167,6 +167,66 @@ function compareLeadsDesc(a, b) {
 }
 
 /**
+ * Level word for a 0-1 component value, used by the expanded card's score
+ * breakdown instead of a number: >= 2/3 High, >= 1/3 Medium, else Low.
+ */
+function levelWord(value) {
+  if (value >= 2 / 3) return 'High';
+  if (value >= 1 / 3) return 'Medium';
+  return 'Low';
+}
+
+/**
+ * Which of `keys` hold ONE identical value on every parcel -- a factor that
+ * cannot tell one home from another (storm history is county-wide, so it is
+ * 1.0 everywhere today). Decided from the loaded data rather than assumed:
+ * if any parcel (so any town) differs, the key is not constant and the card
+ * treats it like every other factor.
+ */
+function constantComponentKeys(parcels, keys) {
+  const constant = new Set();
+  if (!parcels.length) return constant;
+  for (const key of keys) {
+    const first = parcels[0].components ? parcels[0].components[key] : undefined;
+    if (first === null || first === undefined) continue;
+    if (parcels.every((p) => p.components && p.components[key] === first)) constant.add(key);
+  }
+  return constant;
+}
+
+/**
+ * Rows for the expanded card's score breakdown. One row per component that
+ * is present AND carries weight (a zero-weight factor cannot move the score,
+ * so showing it is noise). Sorted biggest contribution (weight x value)
+ * first; a constant factor (see `constantComponentKeys`) goes last whatever
+ * its contribution, since it never separates one home from another. Ties
+ * keep `COMPONENT_ORDER`.
+ */
+function scoreBreakdown(components, weights, constantKeys) {
+  const rows = [];
+  COMPONENT_ORDER.forEach((key, order) => {
+    const value = components[key];
+    if (value === null || value === undefined) return;
+    const weight = weights[key] || 0;
+    if (!(weight > 0)) return;
+    rows.push({
+      key,
+      value,
+      weight,
+      contribution: weight * value,
+      constant: Boolean(constantKeys && constantKeys.has(key)),
+      order,
+    });
+  });
+  rows.sort((a, b) => {
+    if (a.constant !== b.constant) return a.constant ? 1 : -1;
+    if (a.contribution !== b.contribution) return b.contribution - a.contribution;
+    return a.order - b.order;
+  });
+  return rows;
+}
+
+/**
  * Score and rank every parcel at the given weights, returning a new array
  * of `{...parcel, score, rank}` sorted by `compareLeadsDesc` -- `rank` is
  * 1-based position in this ranking. Does NOT filter -- callers apply
@@ -214,6 +274,9 @@ if (typeof module !== 'undefined') {
     computeJobSizeComponent,
     computeSaleRecencyComponent,
     compareLeadsDesc,
+    levelWord,
+    constantComponentKeys,
+    scoreBreakdown,
     rankLeads,
   };
 }
