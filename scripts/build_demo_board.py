@@ -202,7 +202,10 @@ def build_html(data: dict) -> str:
         html = html.replace(marker, content)
     # Belt-and-suspenders: no leftover markers, no accidental closing
     # </script> tag inside any inlined JS that would truncate the page.
-    if re.search(r"__[A-Z_]+__", html):
+    # Only the template's own `/*__NAME__*/` placeholders count: the shared JS/HTML also carry
+    # `__TEASER_STRIP_START__`/`_END__` comments (for the full repo's --teaser build), which a
+    # non-teaser build correctly leaves in place.
+    if re.search(r"/\*__[A-Z_]+__\*/", html):
         raise ValueError("Unresolved template marker left in built HTML")
     return html
 

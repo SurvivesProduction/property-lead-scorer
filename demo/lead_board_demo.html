@@ -192,10 +192,12 @@
 
     <h2 style="margin-top:16px;">Toggles</h2>
     <div class="toggles">
-      <label><input type="checkbox" id="toggle-claimed"> Hide claimed territory</label>
-      <label><input type="checkbox" id="toggle-worked"> Hide worked leads</label>
-      <label><input type="checkbox" id="toggle-mailed"> Hide already mailed/shown</label>
-      <label><input type="checkbox" id="toggle-unreachable"> Hide unreachable (absentee/delinquent)</label>
+      <!-- __TEASER_STRIP_START__ -->
+      <label id="toggle-claimed-row"><input type="checkbox" id="toggle-claimed"> Hide claimed territory</label>
+      <label id="toggle-worked-row"><input type="checkbox" id="toggle-worked"> Hide worked leads</label>
+      <label id="toggle-mailed-row"><input type="checkbox" id="toggle-mailed"> Hide already mailed/shown</label>
+      <label id="toggle-unreachable-row"><input type="checkbox" id="toggle-unreachable"> Hide unreachable (absentee/delinquent)</label>
+      <!-- __TEASER_STRIP_END__ -->
       <label id="toggle-state-only-row"><input type="checkbox" id="toggle-state-only"> Show state-data-only rows</label>
     </div>
   </details>
@@ -247,13 +249,17 @@ var LEAD_BOARD_DATA = {"metadata": {"client_id": "demo", "as_of_year": 2026, "so
  * `enable_siding_signal=False` path for siding specifically, generalized
  * here to every component.
  *
+ * `spendBonus` (config `spend_bonus`, default off) is applied AFTER the
+ * weighted average, exactly where `score_property` applies it; it is not a
+ * slider weight and never enters the average itself.
+ *
  * Fixed combine order matches `score_property`'s own: property, canopy,
  * storm, then siding, jobSize, saleRecency -- floating-point addition is
  * not associative, so this order must stay fixed for bit-for-bit parity.
  */
 const COMPONENT_ORDER = ['property', 'canopy', 'storm', 'siding', 'jobSize', 'saleRecency'];
 
-function computeScore(components, weights) {
+function computeScore(components, weights, spendBonus) {
   let weightedSum = 0;
   let totalWeight = 0;
   for (const key of COMPONENT_ORDER) {
@@ -263,7 +269,16 @@ function computeScore(components, weights) {
     weightedSum += weight * value;
     totalWeight += weight;
   }
-  return totalWeight > 0 ? weightedSum / totalWeight : 0;
+  let score = totalWeight > 0 ? weightedSum / totalWeight : 0;
+  // `score_property`'s spend bonus: a 0-1 `spend` component (recent window/
+  // door/deck/porch permits, see `willingness_to_spend_score`) adds at most
+  // `spendBonus` on top of the weighted average, capped at 1. Applies only
+  // when the config's `spend_bonus` is > 0; a row with no `spend` component
+  // (every teaser row, whose embedded score is computed without it) adds 0.
+  if (spendBonus > 0 && components.spend !== null && components.spend !== undefined) {
+    score = Math.min(1, score + spendBonus * components.spend);
+  }
+  return score;
 }
 
 /**
@@ -375,7 +390,7 @@ function compareLeadsDesc(a, b) {
  * relative to the whole population, so it must never be recomputed
  * against an already-filtered subset.
  */
-function rankLeads(parcels, weights, jobSizeComponents, saleRecencyComponents) {
+function rankLeads(parcels, weights, jobSizeComponents, saleRecencyComponents, spendBonus) {
   const scored = parcels.map((parcel) => {
     const components = {
       property: parcel.components.property,
@@ -384,8 +399,9 @@ function rankLeads(parcels, weights, jobSizeComponents, saleRecencyComponents) {
       siding: parcel.components.siding,
       jobSize: jobSizeComponents ? jobSizeComponents.get(parcel.lead_key) : undefined,
       saleRecency: saleRecencyComponents ? saleRecencyComponents.get(parcel.lead_key) : undefined,
+      spend: parcel.components.spend,
     };
-    const score = computeScore(components, weights);
+    const score = computeScore(components, weights, spendBonus);
     return Object.assign({}, parcel, { score, _components: components });
   });
   scored.sort(compareLeadsDesc);
@@ -486,6 +502,7 @@ function isClaimedTerritory(parcel, soldTowns) {
   return allowed.has((parcel.town || '').toLowerCase());
 }
 
+// __TEASER_STRIP_START__
 function isWorked(parcel) {
   // No pipeline row at all means unworked, same as a 'new' row -- only a
   // non-'new' status counts as worked. See Prompt W's follow-up addendum:
@@ -503,6 +520,7 @@ function isMailedOrShown(parcel) {
 function isUnreachable(parcel) {
   return Boolean(parcel.flags.is_absentee) || Boolean(parcel.flags.is_delinquent);
 }
+// __TEASER_STRIP_END__
 
 function isStateOnly(parcel) {
   return Boolean(parcel.flags.is_state_only);
@@ -572,6 +590,7 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
     if (filterState.requireRealPermitHistory && !hasRealPermitHistory(parcel)) {
       return false;
     }
+    // __TEASER_STRIP_START__
     if (filterState.hideClaimed && isClaimedTerritory(parcel, soldTowns)) {
       return false;
     }
@@ -584,6 +603,7 @@ function applyFilters(parcels, filterState, soldTowns, jobSizePercentiles) {
     if (filterState.hideUnreachable && isUnreachable(parcel)) {
       return false;
     }
+    // __TEASER_STRIP_END__
     if (!filterState.showStateOnly && isStateOnly(parcel)) {
       return false;
     }
@@ -602,19 +622,23 @@ const DEFAULT_FILTER_STATE = {
   sidingMaterials: null,
   roofCoverMaterials: null,
   requireRealPermitHistory: false,
+  // __TEASER_STRIP_START__
   hideClaimed: true,
   hideWorked: true,
   hideMailed: true,
   hideUnreachable: true,
+  // __TEASER_STRIP_END__
   showStateOnly: false,
 };
 
 if (typeof module !== 'undefined') {
   module.exports = {
     isClaimedTerritory,
+    // __TEASER_STRIP_START__
     isWorked,
     isMailedOrShown,
     isUnreachable,
+    // __TEASER_STRIP_END__
     isStateOnly,
     hasRealPermitHistory,
     materialsOf,
@@ -827,7 +851,14 @@ if (typeof module !== 'undefined') {
   const DATA = window.LEAD_BOARD_DATA;
   const PARCELS = DATA.parcels;
   const SOLD_TOWNS = DATA.metadata.sold_towns || [];
+  // The Python scorer's `spend_bonus` config value (0 / absent = off).
+  const SPEND_BONUS = Number((DATA.metadata.weights || {}).spend_bonus) || 0;
   const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
+
+  // Set only by `build_lead_board.py`'s `--teaser` build (2026-10-30
+  // visibility/polish follow-up) -- real/share never set this, so every
+  // branch below is a no-op for them (identical to today's behavior).
+  const IS_TEASER = Boolean(DATA.metadata && DATA.metadata.is_teaser);
 
   // 'Unknown' is included automatically whenever any parcel lacks the
   // field -- materialsOf/roofCoverOf (filters.js) both bucket missing
@@ -1013,10 +1044,12 @@ if (typeof module !== 'undefined') {
 
     refreshChips();
 
+    // __TEASER_STRIP_START__
     el('toggle-claimed').checked = state.hideClaimed;
     el('toggle-worked').checked = state.hideWorked;
     el('toggle-mailed').checked = state.hideMailed;
     el('toggle-unreachable').checked = state.hideUnreachable;
+    // __TEASER_STRIP_END__
     el('toggle-state-only').checked = state.showStateOnly;
     el('toggle-permit-history').checked = state.requireRealPermitHistory;
     // The toggle hides itself when the embedded dataset carries no
@@ -1041,10 +1074,12 @@ if (typeof module !== 'undefined') {
   }
 
   function bindStaticControls() {
+    // __TEASER_STRIP_START__
     el('toggle-claimed').addEventListener('change', (e) => { state.hideClaimed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-worked').addEventListener('change', (e) => { state.hideWorked = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-mailed').addEventListener('change', (e) => { state.hideMailed = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-unreachable').addEventListener('change', (e) => { state.hideUnreachable = e.target.checked; refreshChips(); renderResults(); syncHash(); });
+    // __TEASER_STRIP_END__
     el('toggle-state-only').addEventListener('change', (e) => { state.showStateOnly = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('toggle-permit-history').addEventListener('change', (e) => { state.requireRealPermitHistory = e.target.checked; refreshChips(); renderResults(); syncHash(); });
     el('top-n').addEventListener('change', (e) => { state.topN = parseInt(e.target.value, 10); renderResults(); syncHash(); });
@@ -1167,13 +1202,30 @@ if (typeof module !== 'undefined') {
    */
   function summarizeFilters(state) {
     const parts = [];
-    const hidden = [];
-    if (state.hideClaimed) hidden.push('claimed');
-    if (state.hideWorked) hidden.push('worked');
-    if (state.hideMailed) hidden.push('mailed/shown');
-    if (state.hideUnreachable) hidden.push('unreachable');
-    if (hidden.length) parts.push(`Hiding ${hidden.join(', ')}`);
-    if (state.showStateOnly) parts.push('showing state-data-only rows');
+    if (IS_TEASER) {
+      // __TEASER_STRIP_START__
+      // Every default exclusion (claimed/worked/contacted/unreachable/
+      // state-only) is already applied SERVER-SIDE before the 250 rows
+      // are even selected (see build_lead_board.py's build_teaser_data)
+      // -- the ops toggles themselves are omitted from this build too
+      // (see the public repo's template.html/app.js), so there's nothing
+      // live left to summarize here. One static, always-true fact
+      // replaces it.
+      // __TEASER_STRIP_END__
+      if (SOLD_TOWNS.length) {
+        parts.push(`${SOLD_TOWNS.slice().sort().join(', ')}: territory already claimed.`);
+      }
+    } else {
+      // __TEASER_STRIP_START__
+      const hidden = [];
+      if (state.hideClaimed) hidden.push('claimed');
+      if (state.hideWorked) hidden.push('worked');
+      if (state.hideMailed) hidden.push('mailed/shown');
+      if (state.hideUnreachable) hidden.push('unreachable');
+      if (hidden.length) parts.push(`Hiding ${hidden.join(', ')}`);
+      // __TEASER_STRIP_END__
+      if (state.showStateOnly) parts.push('showing state-data-only rows');
+    }
     if (state.towns && state.towns.size) parts.push(`Towns: ${Array.from(state.towns).sort().join(', ')}`);
     if (state.sidingMaterials && state.sidingMaterials.size) {
       parts.push(`Siding: ${Array.from(state.sidingMaterials).map((f) => FAMILY_LABELS[f] || f).join(', ')}`);
@@ -1202,8 +1254,8 @@ if (typeof module !== 'undefined') {
     // "7th among what's visible," and the arrow means "moved within
     // this same visible set," not a leftover global DB rank.
     const filtered = applyFilters(PARCELS, state, SOLD_TOWNS, jobSizeByLeadKey);
-    const currentRanked = rankLeads(filtered, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey);
-    const defaultRankedSameFilters = rankLeads(filtered, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey);
+    const currentRanked = rankLeads(filtered, state.weights, jobSizeByLeadKey, saleRecencyByLeadKey, SPEND_BONUS);
+    const defaultRankedSameFilters = rankLeads(filtered, DEFAULT_WEIGHTS, jobSizeByLeadKey, saleRecencyByLeadKey, SPEND_BONUS);
     const defaultRankByLeadKey = new Map(defaultRankedSameFilters.map((lead) => [lead.lead_key, lead.rank]));
 
     el('result-count').textContent = `${filtered.length} leads match current filters`;
