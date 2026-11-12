@@ -14,6 +14,8 @@
   const PARCELS = DATA.parcels;
   const SOLD_TOWNS = DATA.metadata.sold_towns || [];
   // The Python scorer's `spend_bonus` config value (0 / absent = off).
+  // Factors identical on every loaded parcel (storm history is county-wide) -- decided from the data.
+  const CONSTANT_COMPONENTS = constantComponentKeys(PARCELS, ['storm']);
   const SPEND_BONUS = Number((DATA.metadata.weights || {}).spend_bonus) || 0;
   const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
 
@@ -331,10 +333,26 @@
       jobSize: 'Job size',
       saleRecency: 'Sale recency',
     };
-    const bars = ['property', 'canopy', 'siding', 'storm', 'jobSize', 'saleRecency']
-      .filter((k) => components[k] !== null && components[k] !== undefined)
-      .map((k) => `<div class="bar-row"><span class="bar-label">${COMPONENT_LABELS[k]}</span><div class="bar-track"><div class="bar-fill" style="width:${fmtPct(components[k])}"></div></div></div>`)
+    // One row per factor that carries weight, biggest contribution first. Bar length is the factor's
+    // value; bar opacity is its weight relative to the heaviest factor, so what drives the score stands
+    // out. The level is a word, never a raw value (nothing a teaser row must not show): property age
+    // uses the decade, which the row header already prints.
+    const breakdown = scoreBreakdown(components, state.weights, CONSTANT_COMPONENTS);
+    const maxWeight = Math.max(...breakdown.map((r) => r.weight), 0);
+    const decadeLabel = lead.year_built ? `${Math.floor(lead.year_built / 10) * 10}s` : null;
+    const bars = breakdown
+      .map((r) => {
+        const note = `<span class="bd-weight">×${r.weight.toFixed(2)}</span>`;
+        const label = `<span class="bd-label">${COMPONENT_LABELS[r.key]}</span>`;
+        if (r.constant) {
+          return `<div class="bd-row bd-constant">${label}<span class="bd-same">same across the county</span>${note}</div>`;
+        }
+        const level = r.key === 'property' && decadeLabel ? decadeLabel : levelWord(r.value);
+        const opacity = maxWeight > 0 ? (0.35 + 0.65 * (r.weight / maxWeight)).toFixed(2) : '1';
+        return `<div class="bd-row">${label}<div class="bd-track"><div class="bd-fill" style="width:${fmtPct(r.value)};opacity:${opacity}"></div></div><span class="bd-level">${level}</span>${note}</div>`;
+      })
       .join('');
+    const scoreHead = `<div class="bd-head"><span class="bd-score">${Math.round(lead.score * 100)}</span><span class="bd-head-text">overall score · rank #${lead.rank}</span></div>`;
 
     return `
       <li class="lead-row" data-lead-key="${lead.lead_key}" data-rank="${lead.rank}">
@@ -347,6 +365,7 @@
           <button type="button" class="expand-btn" data-key="${lead.lead_key}">details</button>
         </div>
         <div class="lead-row-detail" id="detail-${cssSafe(lead.lead_key)}" hidden>
+          ${scoreHead}
           ${bars}
           <div class="link-row">${recordLink}${mapLink}</div>
         </div>

@@ -114,10 +114,20 @@
   .lead-built { color: var(--muted); font-size: 12px; }
   .badge { font-size: 11px; background: var(--badge-bg); color: var(--badge-ink); padding: 2px 8px; border-radius: 999px; }
   .lead-row-detail { margin-top: 8px; padding-left: 8px; }
-  .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
-  .bar-label { width: 90px; color: var(--muted); text-transform: capitalize; }
-  .bar-track { flex: 1; height: 8px; background: var(--bar-track); border-radius: 4px; overflow: hidden; }
-  .bar-fill { height: 100%; background: var(--bar-fill); }
+  /* board-breakdown:start -- synced into the site's /jobs page by property-lead-scorer-full/scripts/refresh_site_teaser.py */
+  .bd-head, .bd-row { max-width: 360px; }
+  .bd-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .bd-score { font-size: 18px; font-weight: 700; line-height: 1; color: var(--accent); }
+  .bd-head-text { font-size: 12px; color: var(--muted); }
+  .bd-row { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; font-size: 12px; line-height: 16px; }
+  .bd-label { flex: 0 0 92px; color: var(--ink); }
+  .bd-track { flex: 0 0 64px; height: 6px; background: var(--bar-track); border-radius: 3px; overflow: hidden; }
+  .bd-fill { height: 100%; background: var(--bar-fill); }
+  .bd-level { flex: 1 1 auto; min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bd-weight { flex: 0 0 auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .bd-constant .bd-label, .bd-constant .bd-same { color: var(--muted); }
+  .bd-same { flex: 1 1 auto; min-width: 0; font-style: italic; }
+  /* board-breakdown:end */
   .link-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px; }
   .verify-link { font-size: 12px; color: var(--accent); display: inline-block; }
   .verify-link-none { color: var(--muted); font-style: italic; }
@@ -376,6 +386,66 @@ function compareLeadsDesc(a, b) {
 }
 
 /**
+ * Level word for a 0-1 component value, used by the expanded card's score
+ * breakdown instead of a number: >= 2/3 High, >= 1/3 Medium, else Low.
+ */
+function levelWord(value) {
+  if (value >= 2 / 3) return 'High';
+  if (value >= 1 / 3) return 'Medium';
+  return 'Low';
+}
+
+/**
+ * Which of `keys` hold ONE identical value on every parcel -- a factor that
+ * cannot tell one home from another (storm history is county-wide, so it is
+ * 1.0 everywhere today). Decided from the loaded data rather than assumed:
+ * if any parcel (so any town) differs, the key is not constant and the card
+ * treats it like every other factor.
+ */
+function constantComponentKeys(parcels, keys) {
+  const constant = new Set();
+  if (!parcels.length) return constant;
+  for (const key of keys) {
+    const first = parcels[0].components ? parcels[0].components[key] : undefined;
+    if (first === null || first === undefined) continue;
+    if (parcels.every((p) => p.components && p.components[key] === first)) constant.add(key);
+  }
+  return constant;
+}
+
+/**
+ * Rows for the expanded card's score breakdown. One row per component that
+ * is present AND carries weight (a zero-weight factor cannot move the score,
+ * so showing it is noise). Sorted biggest contribution (weight x value)
+ * first; a constant factor (see `constantComponentKeys`) goes last whatever
+ * its contribution, since it never separates one home from another. Ties
+ * keep `COMPONENT_ORDER`.
+ */
+function scoreBreakdown(components, weights, constantKeys) {
+  const rows = [];
+  COMPONENT_ORDER.forEach((key, order) => {
+    const value = components[key];
+    if (value === null || value === undefined) return;
+    const weight = weights[key] || 0;
+    if (!(weight > 0)) return;
+    rows.push({
+      key,
+      value,
+      weight,
+      contribution: weight * value,
+      constant: Boolean(constantKeys && constantKeys.has(key)),
+      order,
+    });
+  });
+  rows.sort((a, b) => {
+    if (a.constant !== b.constant) return a.constant ? 1 : -1;
+    if (a.contribution !== b.contribution) return b.contribution - a.contribution;
+    return a.order - b.order;
+  });
+  return rows;
+}
+
+/**
  * Score and rank every parcel at the given weights, returning a new array
  * of `{...parcel, score, rank}` sorted by `compareLeadsDesc` -- `rank` is
  * 1-based position in this ranking. Does NOT filter -- callers apply
@@ -423,6 +493,9 @@ if (typeof module !== 'undefined') {
     computeJobSizeComponent,
     computeSaleRecencyComponent,
     compareLeadsDesc,
+    levelWord,
+    constantComponentKeys,
+    scoreBreakdown,
     rankLeads,
   };
 }
@@ -852,6 +925,8 @@ if (typeof module !== 'undefined') {
   const PARCELS = DATA.parcels;
   const SOLD_TOWNS = DATA.metadata.sold_towns || [];
   // The Python scorer's `spend_bonus` config value (0 / absent = off).
+  // Factors identical on every loaded parcel (storm history is county-wide) -- decided from the data.
+  const CONSTANT_COMPONENTS = constantComponentKeys(PARCELS, ['storm']);
   const SPEND_BONUS = Number((DATA.metadata.weights || {}).spend_bonus) || 0;
   const ALL_TOWNS = Array.from(new Set(PARCELS.map((p) => p.town))).sort();
 
@@ -1169,10 +1244,26 @@ if (typeof module !== 'undefined') {
       jobSize: 'Job size',
       saleRecency: 'Sale recency',
     };
-    const bars = ['property', 'canopy', 'siding', 'storm', 'jobSize', 'saleRecency']
-      .filter((k) => components[k] !== null && components[k] !== undefined)
-      .map((k) => `<div class="bar-row"><span class="bar-label">${COMPONENT_LABELS[k]}</span><div class="bar-track"><div class="bar-fill" style="width:${fmtPct(components[k])}"></div></div></div>`)
+    // One row per factor that carries weight, biggest contribution first. Bar length is the factor's
+    // value; bar opacity is its weight relative to the heaviest factor, so what drives the score stands
+    // out. The level is a word, never a raw value (nothing a teaser row must not show): property age
+    // uses the decade, which the row header already prints.
+    const breakdown = scoreBreakdown(components, state.weights, CONSTANT_COMPONENTS);
+    const maxWeight = Math.max(...breakdown.map((r) => r.weight), 0);
+    const decadeLabel = lead.year_built ? `${Math.floor(lead.year_built / 10) * 10}s` : null;
+    const bars = breakdown
+      .map((r) => {
+        const note = `<span class="bd-weight">×${r.weight.toFixed(2)}</span>`;
+        const label = `<span class="bd-label">${COMPONENT_LABELS[r.key]}</span>`;
+        if (r.constant) {
+          return `<div class="bd-row bd-constant">${label}<span class="bd-same">same across the county</span>${note}</div>`;
+        }
+        const level = r.key === 'property' && decadeLabel ? decadeLabel : levelWord(r.value);
+        const opacity = maxWeight > 0 ? (0.35 + 0.65 * (r.weight / maxWeight)).toFixed(2) : '1';
+        return `<div class="bd-row">${label}<div class="bd-track"><div class="bd-fill" style="width:${fmtPct(r.value)};opacity:${opacity}"></div></div><span class="bd-level">${level}</span>${note}</div>`;
+      })
       .join('');
+    const scoreHead = `<div class="bd-head"><span class="bd-score">${Math.round(lead.score * 100)}</span><span class="bd-head-text">overall score · rank #${lead.rank}</span></div>`;
 
     return `
       <li class="lead-row" data-lead-key="${lead.lead_key}" data-rank="${lead.rank}">
@@ -1185,6 +1276,7 @@ if (typeof module !== 'undefined') {
           <button type="button" class="expand-btn" data-key="${lead.lead_key}">details</button>
         </div>
         <div class="lead-row-detail" id="detail-${cssSafe(lead.lead_key)}" hidden>
+          ${scoreHead}
           ${bars}
           <div class="link-row">${recordLink}${mapLink}</div>
         </div>

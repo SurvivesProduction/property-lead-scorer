@@ -10,6 +10,9 @@ const {
   computeSaleRecencyComponent,
   compareLeadsDesc,
   rankLeads,
+  levelWord,
+  constantComponentKeys,
+  scoreBreakdown,
 } = require(path.join('..', 'lead_board', 'scoring.js'));
 
 test('computeScore: weighted average of present components only', () => {
@@ -176,6 +179,49 @@ test('rankLeads: passes parcel.components.spend and spendBonus through', () => {
   const off = rankLeads([mk('A', '1', 0), mk('B', '2', 1)], weights, new Map(), new Map(), 0);
   assert.strictEqual(off[0].lead_key, 'B'); // tie broken by reversed parcel_id, not by spend
   assert.strictEqual(off[0].score, off[1].score);
+});
+
+test('levelWord: thirds', () => {
+  assert.deepStrictEqual([0, 0.33, 0.34, 0.66, 0.67, 1].map(levelWord), ['Low', 'Low', 'Medium', 'Medium', 'High', 'High']);
+});
+
+test('scoreBreakdown: sorted by contribution (weight x value), biggest first', () => {
+  const rows = scoreBreakdown(
+    { property: 0.9, canopy: 0.4, storm: 1.0, siding: 0.2 },
+    { property: 0.5, canopy: 0.15, storm: 0.05, siding: 0.3 },
+    new Set()
+  );
+  // property 0.45, canopy 0.06, storm 0.05, siding 0.06 -> canopy/siding tie at 0.06 keeps component order
+  assert.deepStrictEqual(rows.map((r) => r.key), ['property', 'canopy', 'siding', 'storm']);
+  assert.ok(Math.abs(rows[0].contribution - 0.45) < 1e-12);
+  assert.strictEqual(rows[0].weight, 0.5);
+});
+
+test('scoreBreakdown: a factor can outrank a heavier one when its value is higher', () => {
+  const rows = scoreBreakdown({ property: 0.1, siding: 1.0 }, { property: 0.5, siding: 0.3 }, new Set());
+  assert.deepStrictEqual(rows.map((r) => r.key), ['siding', 'property']); // 0.30 > 0.05
+});
+
+test('scoreBreakdown: a constant factor goes last even when it contributes more than others', () => {
+  const rows = scoreBreakdown({ property: 0.1, storm: 1.0 }, { property: 0.2, storm: 0.5 }, new Set(['storm']));
+  assert.deepStrictEqual(rows.map((r) => [r.key, r.constant]), [['property', false], ['storm', true]]);
+});
+
+test('scoreBreakdown: zero-weight and missing components are left out', () => {
+  const rows = scoreBreakdown(
+    { property: 0.5, canopy: null, storm: 1, siding: 0.5, jobSize: 0.9, saleRecency: 0.1 },
+    { property: 0.5, canopy: 0.15, storm: 0.05, siding: 0.3, jobSize: 0, saleRecency: 0 },
+    new Set()
+  );
+  assert.deepStrictEqual(rows.map((r) => r.key), ['property', 'siding', 'storm']);
+});
+
+test('constantComponentKeys: storm is constant only while every parcel agrees', () => {
+  const mk = (storm) => ({ components: { storm, canopy: 0.5 } });
+  assert.deepStrictEqual([...constantComponentKeys([mk(1), mk(1), mk(1)], ['storm'])], ['storm']);
+  assert.deepStrictEqual([...constantComponentKeys([mk(1), mk(0.9)], ['storm'])], []);
+  assert.deepStrictEqual([...constantComponentKeys([], ['storm'])], []);
+  assert.deepStrictEqual([...constantComponentKeys([mk(null), mk(null)], ['storm'])], []);
 });
 
 run();
