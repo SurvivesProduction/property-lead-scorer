@@ -332,29 +332,33 @@
       storm: 'Storm history',
       jobSize: 'Job size',
       saleRecency: 'Sale recency',
+      // __TEASER_STRIP_START__
+      spend: 'Likely to spend',
+      // __TEASER_STRIP_END__
     };
-    // One row per factor that carries weight, biggest contribution first. The track's LENGTH is the factor's
-    // weight (the heaviest bar-carrying factor gets the full track) and the fill inside it is the factor's
-    // value, so a long track = a factor that drives the score and a full fill = a high value. The end of the
-    // row gives the factor's share of the score, from the current weights. The level is a word, never a raw
-    // value (nothing a teaser row must not show): property age uses the decade, which the row header prints.
-    const breakdown = scoreBreakdown(components, state.weights, CONSTANT_COMPONENTS);
-    const totalWeight = breakdown.reduce((sum, r) => sum + r.weight, 0);
-    const maxBarWeight = Math.max(...breakdown.filter((r) => !r.constant).map((r) => r.weight), 0);
+    // One row per factor that carries weight, biggest contribution first, in whole points for THIS home:
+    // "earned / possible", where possible is the factor's share of the weights x 100 and earned is that times
+    // the factor's value. The rows add up to the overall score in the header (see `pointsBreakdown`). The
+    // track's LENGTH is the points possible (the biggest bar-carrying row gets the full track) and the fill
+    // inside it is the points earned. No raw values: property age adds the decade, which the row header
+    // already prints.
+    const { score: overall, rows: breakdown } = pointsBreakdown(components, state.weights, CONSTANT_COMPONENTS, SPEND_BONUS);
+    const maxBarPoints = Math.max(...breakdown.filter((r) => !r.constant).map((r) => r.possible), 0);
     const decadeLabel = lead.year_built ? `${Math.floor(lead.year_built / 10) * 10}s` : null;
     const bars = breakdown
       .map((r) => {
-        const share = `<span class="bd-share">${Math.round((r.weight / totalWeight) * 100)}%</span>`;
         const label = `<span class="bd-label">${COMPONENT_LABELS[r.key]}</span>`;
+        const points = `${r.earned} / ${r.possible}`;
         if (r.constant) {
-          return `<div class="bd-row bd-constant">${label}<span class="bd-same">same across the county</span>${share}</div>`;
+          return `<div class="bd-row bd-constant">${label}<span class="bd-same">${points} · same across the county</span></div>`;
         }
-        const level = r.key === 'property' && decadeLabel ? decadeLabel : levelWord(r.value);
-        const trackWidth = maxBarWeight > 0 ? fmtPct(r.weight / maxBarWeight) : '0%';
-        return `<div class="bd-row">${label}<div class="bd-slot"><div class="bd-track" style="width:${trackWidth}"><div class="bd-fill" style="width:${fmtPct(r.value)}"></div></div></div><span class="bd-level">${level}</span>${share}</div>`;
+        const note = r.key === 'property' && decadeLabel ? ` <span class="bd-note">· ${decadeLabel}</span>` : '';
+        const trackWidth = maxBarPoints > 0 ? fmtPct(r.possible / maxBarPoints) : '0%';
+        const fillWidth = r.possible > 0 ? fmtPct(r.earned / r.possible) : '0%';
+        return `<div class="bd-row">${label}<div class="bd-slot"><div class="bd-track" style="width:${trackWidth}"><div class="bd-fill" style="width:${fillWidth}"></div></div></div><span class="bd-points">${points}${note}</span></div>`;
       })
       .join('');
-    const scoreHead = `<div class="bd-head"><span class="bd-score">${Math.round(lead.score * 100)}</span><span class="bd-head-text">overall score</span></div>`;
+    const scoreHead = `<div class="bd-head"><span class="bd-score">${overall}</span><span class="bd-head-text">overall score</span></div>`;
 
     return `
       <li class="lead-row" data-lead-key="${lead.lead_key}" data-rank="${lead.rank}">

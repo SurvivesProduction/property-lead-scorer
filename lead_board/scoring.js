@@ -167,16 +167,6 @@ function compareLeadsDesc(a, b) {
 }
 
 /**
- * Level word for a 0-1 component value, used by the expanded card's score
- * breakdown instead of a number: >= 2/3 High, >= 1/3 Medium, else Low.
- */
-function levelWord(value) {
-  if (value >= 2 / 3) return 'High';
-  if (value >= 1 / 3) return 'Medium';
-  return 'Low';
-}
-
-/**
  * Which of `keys` hold ONE identical value on every parcel -- a factor that
  * cannot tell one home from another (storm history is county-wide, so it is
  * 1.0 everywhere today). Decided from the loaded data rather than assumed:
@@ -218,12 +208,77 @@ function scoreBreakdown(components, weights, constantKeys) {
       order,
     });
   });
-  rows.sort((a, b) => {
-    if (a.constant !== b.constant) return a.constant ? 1 : -1;
-    if (a.contribution !== b.contribution) return b.contribution - a.contribution;
-    return a.order - b.order;
-  });
+  rows.sort(compareBreakdownRows);
   return rows;
+}
+
+// Non-constant rows first, then biggest contribution, then component order.
+function compareBreakdownRows(a, b) {
+  if (a.constant !== b.constant) return a.constant ? 1 : -1;
+  if (a.contribution !== b.contribution) return b.contribution - a.contribution;
+  return a.order - b.order;
+}
+
+/**
+ * The card's per-home breakdown in whole points. Each row's `possible` is
+ * its share of the weights x 100 and its `earned` is that times the
+ * factor's value for THIS home, so the rows add up to the overall score
+ * the card prints (`Math.round(computeScore(...) * 100)`). When the spend
+ * bonus applies it gets its own row, worth up to `spendBonus` x 100
+ * points, so the bonus is never folded into another factor.
+ *
+ * Each figure is rounded to a whole point; whatever is left over to make
+ * the sums exact (`earned` -> the overall score, `possible` -> 100 plus
+ * the bonus) goes to the largest row that has room for it, so `earned`
+ * never exceeds `possible` or drops below 0. Returns `{score, rows}`.
+ */
+function pointsBreakdown(components, weights, constantKeys, spendBonus) {
+  const rows = scoreBreakdown(components, weights, constantKeys);
+  const totalWeight = rows.reduce((sum, r) => sum + r.weight, 0);
+  if (!(totalWeight > 0)) return { score: 0, rows: [] };
+  rows.forEach((r) => {
+    r.possibleExact = (r.weight / totalWeight) * 100;
+    r.earnedExact = r.possibleExact * r.value;
+  });
+  const hasSpend = spendBonus > 0 && components.spend !== null && components.spend !== undefined;
+  if (hasSpend) {
+    rows.push({
+      key: 'spend',
+      value: components.spend,
+      weight: null,
+      contribution: spendBonus * components.spend,
+      constant: false,
+      order: COMPONENT_ORDER.length,
+      possibleExact: spendBonus * 100,
+      earnedExact: spendBonus * components.spend * 100,
+    });
+    rows.sort(compareBreakdownRows);
+  }
+  rows.forEach((r) => {
+    r.possible = Math.round(r.possibleExact);
+    r.earned = Math.min(Math.round(r.earnedExact), r.possible);
+  });
+  const score = Math.round(computeScore(components, weights, spendBonus) * 100);
+  const possibleTarget = 100 + (hasSpend ? Math.round(spendBonus * 100) : 0);
+  const byPossibleDesc = rows.slice().sort((a, b) => b.possibleExact - a.possibleExact || a.order - b.order);
+  let diff = possibleTarget - rows.reduce((sum, r) => sum + r.possible, 0);
+  for (const r of byPossibleDesc) {
+    if (diff === 0) break;
+    const step = diff > 0 ? diff : Math.max(diff, -r.possible);
+    r.possible += step;
+    diff -= step;
+  }
+  rows.forEach((r) => {
+    r.earned = Math.min(r.earned, r.possible);
+  });
+  diff = score - rows.reduce((sum, r) => sum + r.earned, 0);
+  for (const r of byPossibleDesc) {
+    if (diff === 0) break;
+    const step = diff > 0 ? Math.min(diff, r.possible - r.earned) : Math.max(diff, -r.earned);
+    r.earned += step;
+    diff -= step;
+  }
+  return { score, rows };
 }
 
 /**
@@ -274,9 +329,9 @@ if (typeof module !== 'undefined') {
     computeJobSizeComponent,
     computeSaleRecencyComponent,
     compareLeadsDesc,
-    levelWord,
     constantComponentKeys,
     scoreBreakdown,
+    pointsBreakdown,
     rankLeads,
   };
 }

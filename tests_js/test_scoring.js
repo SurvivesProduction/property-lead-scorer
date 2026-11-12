@@ -10,9 +10,9 @@ const {
   computeSaleRecencyComponent,
   compareLeadsDesc,
   rankLeads,
-  levelWord,
   constantComponentKeys,
   scoreBreakdown,
+  pointsBreakdown,
 } = require(path.join('..', 'lead_board', 'scoring.js'));
 
 test('computeScore: weighted average of present components only', () => {
@@ -181,10 +181,6 @@ test('rankLeads: passes parcel.components.spend and spendBonus through', () => {
   assert.strictEqual(off[0].score, off[1].score);
 });
 
-test('levelWord: thirds', () => {
-  assert.deepStrictEqual([0, 0.33, 0.34, 0.66, 0.67, 1].map(levelWord), ['Low', 'Low', 'Medium', 'Medium', 'High', 'High']);
-});
-
 test('scoreBreakdown: sorted by contribution (weight x value), biggest first', () => {
   const rows = scoreBreakdown(
     { property: 0.9, canopy: 0.4, storm: 1.0, siding: 0.2 },
@@ -222,6 +218,75 @@ test('constantComponentKeys: storm is constant only while every parcel agrees', 
   assert.deepStrictEqual([...constantComponentKeys([mk(1), mk(0.9)], ['storm'])], []);
   assert.deepStrictEqual([...constantComponentKeys([], ['storm'])], []);
   assert.deepStrictEqual([...constantComponentKeys([mk(null), mk(null)], ['storm'])], []);
+});
+
+
+// A small seeded generator (mulberry32) so the random homes are the same on every run.
+function seededRandom(seed) {
+  let a = seed;
+  return () => {
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+test('pointsBreakdown: rows sum to the overall score for 1,000 random homes', () => {
+  const rnd = seededRandom(20261111);
+  const keys = ['property', 'canopy', 'storm', 'siding', 'jobSize', 'saleRecency'];
+  for (let i = 0; i < 1000; i++) {
+    const components = {};
+    keys.forEach((k) => {
+      const roll = rnd();
+      components[k] = roll < 0.1 ? null : roll < 0.2 ? 1 : roll < 0.25 ? 0 : rnd();
+    });
+    const weights = {};
+    keys.forEach((k) => {
+      weights[k] = rnd() < 0.2 ? 0 : rnd();
+    });
+    weights.property = Math.max(weights.property, 0.01);
+    components.property = components.property === null ? rnd() : components.property;
+    const spendBonus = rnd() < 0.5 ? 0.03 : 0;
+    if (spendBonus > 0 && rnd() < 0.8) components.spend = rnd() < 0.3 ? 1 : rnd();
+    const { score, rows } = pointsBreakdown(components, weights, new Set(rnd() < 0.5 ? ['storm'] : []), spendBonus);
+    const hasSpend = spendBonus > 0 && components.spend !== undefined;
+    const label = JSON.stringify({ components, weights, spendBonus });
+    assert.strictEqual(score, Math.round(computeScore(components, weights, spendBonus) * 100), label);
+    assert.strictEqual(rows.reduce((s, r) => s + r.earned, 0), score, label);
+    assert.strictEqual(rows.reduce((s, r) => s + r.possible, 0), 100 + (hasSpend ? 3 : 0), label);
+    rows.forEach((r) => {
+      assert.ok(Number.isInteger(r.earned) && Number.isInteger(r.possible), label);
+      assert.ok(r.earned >= 0 && r.earned <= r.possible, label);
+    });
+  }
+});
+
+test('pointsBreakdown: the default weights give whole points per home, storm included', () => {
+  const { score, rows } = pointsBreakdown(
+    { property: 0.9, canopy: 0.4, storm: 1.0, siding: 0.6 },
+    { property: 0.5, canopy: 0.15, storm: 0.05, siding: 0.3 },
+    new Set(['storm']),
+    0
+  );
+  const byKey = Object.fromEntries(rows.map((r) => [r.key, [r.earned, r.possible]]));
+  assert.deepStrictEqual(byKey, { property: [45, 50], siding: [18, 30], canopy: [6, 15], storm: [5, 5] });
+  assert.strictEqual(score, 74);
+  assert.strictEqual(rows[rows.length - 1].key, 'storm');
+});
+
+test('pointsBreakdown: the spend bonus is its own row and a capped score still sums', () => {
+  const { score, rows } = pointsBreakdown(
+    { property: 1, canopy: 1, storm: 1, siding: 1, spend: 1 },
+    { property: 0.5, canopy: 0.15, storm: 0.05, siding: 0.3 },
+    new Set(),
+    0.03
+  );
+  assert.strictEqual(score, 100);
+  assert.strictEqual(rows.reduce((s, r) => s + r.earned, 0), 100);
+  const spend = rows.find((r) => r.key === 'spend');
+  assert.ok(spend.possible === 3 && spend.earned <= 3);
+  assert.strictEqual(rows.reduce((s, r) => s + r.possible, 0), 103);
 });
 
 run();
