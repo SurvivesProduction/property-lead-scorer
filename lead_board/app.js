@@ -333,26 +333,28 @@
       jobSize: 'Job size',
       saleRecency: 'Sale recency',
     };
-    // One row per factor that carries weight, biggest contribution first. Bar length is the factor's
-    // value; bar opacity is its weight relative to the heaviest factor, so what drives the score stands
-    // out. The level is a word, never a raw value (nothing a teaser row must not show): property age
-    // uses the decade, which the row header already prints.
+    // One row per factor that carries weight, biggest contribution first. The track's LENGTH is the factor's
+    // weight (the heaviest bar-carrying factor gets the full track) and the fill inside it is the factor's
+    // value, so a long track = a factor that drives the score and a full fill = a high value. The end of the
+    // row gives the factor's share of the score, from the current weights. The level is a word, never a raw
+    // value (nothing a teaser row must not show): property age uses the decade, which the row header prints.
     const breakdown = scoreBreakdown(components, state.weights, CONSTANT_COMPONENTS);
-    const maxWeight = Math.max(...breakdown.map((r) => r.weight), 0);
+    const totalWeight = breakdown.reduce((sum, r) => sum + r.weight, 0);
+    const maxBarWeight = Math.max(...breakdown.filter((r) => !r.constant).map((r) => r.weight), 0);
     const decadeLabel = lead.year_built ? `${Math.floor(lead.year_built / 10) * 10}s` : null;
     const bars = breakdown
       .map((r) => {
-        const note = `<span class="bd-weight">×${r.weight.toFixed(2)}</span>`;
+        const share = `<span class="bd-share">${Math.round((r.weight / totalWeight) * 100)}%</span>`;
         const label = `<span class="bd-label">${COMPONENT_LABELS[r.key]}</span>`;
         if (r.constant) {
-          return `<div class="bd-row bd-constant">${label}<span class="bd-same">same across the county</span>${note}</div>`;
+          return `<div class="bd-row bd-constant">${label}<span class="bd-same">same across the county</span>${share}</div>`;
         }
         const level = r.key === 'property' && decadeLabel ? decadeLabel : levelWord(r.value);
-        const opacity = maxWeight > 0 ? (0.35 + 0.65 * (r.weight / maxWeight)).toFixed(2) : '1';
-        return `<div class="bd-row">${label}<div class="bd-track"><div class="bd-fill" style="width:${fmtPct(r.value)};opacity:${opacity}"></div></div><span class="bd-level">${level}</span>${note}</div>`;
+        const trackWidth = maxBarWeight > 0 ? fmtPct(r.weight / maxBarWeight) : '0%';
+        return `<div class="bd-row">${label}<div class="bd-slot"><div class="bd-track" style="width:${trackWidth}"><div class="bd-fill" style="width:${fmtPct(r.value)}"></div></div></div><span class="bd-level">${level}</span>${share}</div>`;
       })
       .join('');
-    const scoreHead = `<div class="bd-head"><span class="bd-score">${Math.round(lead.score * 100)}</span><span class="bd-head-text">overall score · rank #${lead.rank}</span></div>`;
+    const scoreHead = `<div class="bd-head"><span class="bd-score">${Math.round(lead.score * 100)}</span><span class="bd-head-text">overall score</span></div>`;
 
     return `
       <li class="lead-row" data-lead-key="${lead.lead_key}" data-rank="${lead.rank}">
