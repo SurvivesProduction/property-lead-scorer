@@ -87,7 +87,7 @@ def _parcel_content_params(record: ParcelLeadRecord) -> dict[str, Any]:
     }
 
 
-def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[str, Any]:
+def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord, commit: bool = True) -> dict[str, Any]:
     """Insert or update a parcel, keyed on (client_id, town, parcel_id).
 
     An exact match refreshes the row's content and bumps `last_seen_at`;
@@ -261,7 +261,8 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord) -> dict[st
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(query, params)
         row = cur.fetchone()
-    conn.commit()
+    if commit:  # a caller that logs the change (extscorer.db.load_log) commits once, after the log rows
+        conn.commit()
     assert row is not None
     return row
 
