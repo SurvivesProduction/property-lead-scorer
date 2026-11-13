@@ -142,3 +142,30 @@ def test_migration_copies_are_idempotent_and_live_rows_are_not() -> None:
     live = FakeConn([])
     ll.append_log(live, CTX, _old(P1), [ll.FieldChange("year_built", 1, 2)])
     assert "on conflict" not in live.statements[0][0]
+
+
+def test_upsert_parcel_can_leave_the_commit_to_the_caller() -> None:
+    from extscorer.db import client
+    from extscorer.normalize.schema import ParcelLeadRecord
+
+    class Cur(FakeCursor):
+        def fetchone(self):
+            return {"id": P1}
+
+    class Conn(FakeConn):
+        def cursor(self, row_factory=None):
+            return Cur(self)
+
+    record = ParcelLeadRecord(client_id="c1", town="Testville", county="Windham", parcel_id="1", address="1 TEST RD", source_url="https://example.invalid/1")
+    held, default = Conn([]), Conn([])
+    client.upsert_parcel(held, record, commit=False)
+    client.upsert_parcel(default, record)
+    assert held.commits == 0 and default.commits == 1
+
+
+def test_field_meta_rides_on_that_fields_log_row_only() -> None:
+    conn = FakeConn([_old(P1, year_built=1950, living_area_sqft=1000)])
+    ll.logged_update(conn, CTX, P1, {"year_built": 1960, "living_area_sqft": 1100}, meta={"run": "x"},
+                     field_meta={"year_built": {"overrode_load_key": "warren_x"}})
+    metas = {p[7]: p[11].obj for s, p in conn.statements if "insert into parcel_load_log" in s}
+    assert metas == {"year_built": {"run": "x", "overrode_load_key": "warren_x"}, "living_area_sqft": {"run": "x"}}

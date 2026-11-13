@@ -122,9 +122,10 @@ def _fetch_old(conn, parcel_uuids: Sequence[Any], columns: Sequence[str]) -> dic
 
 
 def logged_update_many(conn, ctx: LoadContext, assignments: Sequence[tuple[Any, Mapping[str, Any]]], meta: Mapping[str, Any] | None = None,
-                       touch_updated_at: bool = True) -> dict[Any, list[FieldChange]]:
+                       touch_updated_at: bool = True, field_meta: Mapping[str, Mapping[str, Any]] | None = None) -> dict[Any, list[FieldChange]]:
     """`assignments` = [(parcel uuid, {column: new value})]. Writes only the columns whose value differs, bumps
     `updated_at` on rows that changed, and logs every change. Returns {parcel uuid: [changes]} for the rows that changed.
+    `field_meta` = {column: extra meta} for that column's log row (e.g. which earlier load a scrape overrode).
     A parcel missing from the table raises. Does not commit."""
     if not assignments:
         return {}
@@ -136,7 +137,7 @@ def logged_update_many(conn, ctx: LoadContext, assignments: Sequence[tuple[Any, 
         for pid, values in assignments:
             if pid not in old:
                 raise LookupError(f"parcel {pid} not found")
-            changes = diff_fields(old[pid], values)
+            changes = [FieldChange(c.field, c.before, c.after, (field_meta or {}).get(c.field)) for c in diff_fields(old[pid], values)]
             if not changes:
                 continue
             sets = [sql.SQL("{} = %s").format(sql.Identifier(c.field)) for c in changes]
@@ -151,8 +152,8 @@ def logged_update_many(conn, ctx: LoadContext, assignments: Sequence[tuple[Any, 
 
 
 def logged_update(conn, ctx: LoadContext, parcel_uuid: Any, new_values: Mapping[str, Any], meta: Mapping[str, Any] | None = None,
-                  touch_updated_at: bool = True) -> list[FieldChange]:
-    return logged_update_many(conn, ctx, [(parcel_uuid, new_values)], meta, touch_updated_at).get(parcel_uuid, [])
+                  touch_updated_at: bool = True, field_meta: Mapping[str, Mapping[str, Any]] | None = None) -> list[FieldChange]:
+    return logged_update_many(conn, ctx, [(parcel_uuid, new_values)], meta, touch_updated_at, field_meta).get(parcel_uuid, [])
 
 
 def _adapt(value: Any) -> Any:
