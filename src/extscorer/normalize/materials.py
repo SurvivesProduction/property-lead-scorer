@@ -71,6 +71,8 @@ ROOF_WOOD = "wood"
 ROOF_RUBBER_ROLLED = "rubber_rolled"
 ROOF_TAR_GRAVEL = "tar_gravel"
 ROOF_CONCRETE = "concrete"
+ROOF_TILE = "tile"            # clay tile (2026-11-16); concrete tile stays under ROOF_CONCRETE
+ROOF_ASBESTOS = "asbestos"    # asbestos-cement shingle and corrugated sheet (2026-11-16)
 ROOF_OTHER = "other"
 
 # "arch[itectural shingle]" is grouped under asphalt -- architectural
@@ -79,13 +81,15 @@ ROOF_OTHER = "other"
 # no raw value matching more than one group, so order hasn't mattered in
 # practice, but a fixed order keeps this deterministic if that changes.
 _ROOF_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    (ROOF_ASPHALT, ("asph", "arch")),
-    (ROOF_METAL, ("metal", "mtl")),
+    (ROOF_ASPHALT, ("asph", "arch", "fiberglass")),  # "Fiberglass" shingle is an asphalt-fiberglass product
+    (ROOF_METAL, ("metal", "mtl", "copper")),
     (ROOF_SLATE, ("slate",)),
     (ROOF_WOOD, ("wood",)),
-    (ROOF_RUBBER_ROLLED, ("rubber", "roll")),
+    (ROOF_RUBBER_ROLLED, ("rubber", "roll", "membrane")),  # "Membrane" (EPDM/rubber sheet)
     (ROOF_TAR_GRAVEL, ("tar", "gravel")),
     (ROOF_CONCRETE, ("concrete",)),
+    (ROOF_TILE, ("clay", "tile")),  # after concrete: "Concrete Tile" is concrete
+    (ROOF_ASBESTOS, ("asbest", "asb")),  # "Asbestos Shing", "Asbestos", "Corrugated Asb", "Corr. Asbestos"
 )
 
 

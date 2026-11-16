@@ -23,9 +23,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_MASONRY = re.compile(r"brick|stone|masonry|msnry|stucco|concr|cinder|\bblock\b|\bmas\b")
+_MASONRY = re.compile(r"brick|stone|masonry|msnry|stucco|concr|cinder|precast|\bblock\b|\bmas\b")
 _SIDABLE = re.compile(
-    r"vinyl|alumin|\bal\b|al/|clapboard|shingle|shake|siding|metal|\blog\b|batten|pre-?fab|wood frame|wood on|"
+    r"vinyl|alumin|\bal\b|al/|clapboard|shingle|shake|siding|metal|steel|\blog\b|batten|pre-?fab|wood frame|wood on|"
     r"cedar|redwood|board|cement|hardi|asbest"
 )
 _WOOD = re.compile(r"\bwood\b")

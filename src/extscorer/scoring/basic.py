@@ -546,11 +546,13 @@ _DURABLE_MATERIAL_KEYWORDS = (
     "log",
     "metal",
     "metl",  # VGSI's own abbreviated "Pre-finsh Metl"
+    "steel",  # "Enameled Steel": metal siding (2026-11-16)
     "masonry",
     "brick",
     "stone",
     "stucco",
     "concr",  # "Concrete"/"Concr/Cinder"
+    "precast",  # "Precast Panel": concrete (2026-11-16), masonry in `extscorer.normalize.walls`
     "cinder",
     "fibr/cem",
     "fiber cement",
