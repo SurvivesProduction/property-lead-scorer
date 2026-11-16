@@ -53,9 +53,9 @@ def test_vertical_is_a_whole_value_not_a_substring() -> None:
     assert _classify_wall_material("Vertical Blinds") == "other"
 
 
-def test_comp_wall_board_stays_unknown() -> None:
-    assert _classify_wall_material("Comp./Wall Brd") == "other"
-    assert siding_age_score(_p("Comp./Wall Brd")) == 0.5
+def test_comp_wall_board_is_a_replacement_lead_not_unknown() -> None:
+    assert _classify_wall_material("Comp./Wall Brd") == "replacement_lead"
+    assert siding_age_score(_p("Comp./Wall Brd")) != 0.5
 
 
 @pytest.mark.parametrize("label", ["Average", "Minimum", "Above Average", "Below Average", " average "])
@@ -71,7 +71,7 @@ def test_quality_grades_are_unknown_like_blank(label) -> None:
 
 
 def test_a_real_material_containing_a_grade_word_is_still_a_material() -> None:
-    assert _classify_wall_material("Avrge/Masonite") == "durable_original"
+    assert _classify_wall_material("Avrge/Masonite") == "replacement_lead"
 
 
 def test_reasons_do_not_echo_a_quality_grade() -> None:
@@ -166,7 +166,7 @@ def test_enameled_steel_is_a_durable_metal_wall() -> None:
     assert wall_material_families("Pre-finsh Metl") == [FAMILY_DURABLE]
 
 
-@pytest.mark.parametrize("raw", ["Comp./Wall Brd", "Comp/ Wall Brd", "Single Siding", "Glass/Thermo.", "FLYASH ICON"])
+@pytest.mark.parametrize("raw", ["Single Siding", "Glass/Thermo.", "FLYASH ICON"])
 def test_values_held_back_from_the_vocabulary_stay_other(raw) -> None:
     assert _classify_wall_material(raw) == "other"
     assert wall_material_families(raw) == ["other"]
@@ -175,3 +175,38 @@ def test_values_held_back_from_the_vocabulary_stay_other(raw) -> None:
 @pytest.mark.parametrize("raw", ["Average", "Minimum", "Above Average", "Below Average"])
 def test_quality_grades_stay_unknown(raw) -> None:
     assert usable_wall_text(raw) is None and wall_material_families(raw) == []
+
+
+# --- composition / hardboard siding is its own replacement-lead family (2026-11-16) -----------------------------
+
+@pytest.mark.parametrize("label", ["Comp./Wall Brd", "Masonite", "Hardboard", "Avrge/Masonite"])
+def test_composition_board_is_a_replacement_lead(label):
+    from extscorer.normalize.materials import FAMILY_REPLACEMENT_LEAD
+    from extscorer.scoring.basic import MATERIAL_REPLACEMENT_LEAD, _classify_wall_material
+    assert _classify_wall_material(label) == MATERIAL_REPLACEMENT_LEAD
+    assert FAMILY_REPLACEMENT_LEAD in wall_material_families(label)
+    assert FAMILY_DURABLE not in wall_material_families(label)
+
+
+def test_hardi_or_comp_stays_fiber_cement():
+    from extscorer.scoring.basic import MATERIAL_FIBER_CEMENT, _classify_wall_material
+    assert _classify_wall_material("Hardi or Comp") == MATERIAL_FIBER_CEMENT
+
+
+def test_replacement_lead_scores_above_durable_and_rises_with_age():
+    from extscorer.scoring.basic import siding_age_score
+    comp = lambda year: siding_age_score({"exterior_wall_1": "Comp./Wall Brd", "year_built": year})
+    wood = lambda year: siding_age_score({"exterior_wall_1": "Wood", "year_built": year})
+    assert comp(1960) > comp(1980) > comp(1990) > comp(2005)
+    assert comp(1960) > wood(1960) and comp(1990) > wood(1990)
+    assert comp(2005) < wood(2005)  # decays faster once newer than the cutoff
+
+
+def test_replacement_lead_real_mode_decays_faster_than_durable():
+    from datetime import date
+    from extscorer.scoring.basic import real_siding_age_score
+    def parcel(wall):
+        return {"exterior_wall_1": wall, "year_built": 1975, "permit_data_available": True,
+                "permit_history": [{"permit_type": "Siding", "reason": "siding", "date_opened": "01/01/2006", "status": None}]}
+    comp, wood = real_siding_age_score(parcel("Comp./Wall Brd"), as_of_year=2026), real_siding_age_score(parcel("Wood"), as_of_year=2026)
+    assert comp > wood  # a 20-year-old re-side counts for less on a composition board's family curve
