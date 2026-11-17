@@ -375,6 +375,18 @@ _FIBER_CEMENT_LABELS = frozenset({
 })
 MATERIAL_ALUM_OR_VINYL = "aluminum_or_vinyl"
 
+# Composition / hardboard siding ("Comp./Wall Brd", hardboard, masonite): pressed wood fibre that swells, delaminates and rots
+# within a few decades, so a house still wearing it is a REPLACEMENT lead, not a durable original. Own family: its curve sits
+# above the durable one and saturates faster with age, and a past re-side stops counting sooner (shorter real-mode decay).
+# Judgment-call defaults, named and overridable like the other families, not fitted numbers.
+MATERIAL_REPLACEMENT_LEAD = "replacement_lead"
+_REPLACEMENT_LEAD_LABELS = frozenset({"comp./wall brd", "comp/ wall brd"})
+_REPLACEMENT_LEAD_KEYWORDS = ("hardboard", "masonite")
+DEFAULT_SIDING_REPLACEMENT_LEAD_NEVER_RESIDED_YEAR = 1990
+DEFAULT_SIDING_REPLACEMENT_LEAD_DECAY_YEARS = 15.0
+DEFAULT_SIDING_REPLACEMENT_LEAD_BASELINE_SCORE = 0.90
+DEFAULT_REAL_SIDING_REPLACEMENT_LEAD_DECAY_YEARS = 20.0
+
 
 # Property-age component for a parcel whose recorded year is the 1900 placeholder and which has no usable effective year:
 # neither "old" nor "new", so neutral (see `extscorer.normalize.year_built`).
@@ -557,8 +569,6 @@ _DURABLE_MATERIAL_KEYWORDS = (
     "fibr/cem",
     "fiber cement",
     "cement",  # e.g. "Cement Board" -- a fiber-cement product, not vinyl
-    "hardboard",
-    "masonite",
     "hardie",  # Hardie Plank/Board -- a real fiber-cement siding brand
     "hardy",  # the same product, misspelled on at least one real card
     "hardi",  # "Hardi or Comp" (Mansfield)
@@ -613,6 +623,8 @@ def _classify_wall_material(exterior_wall_1: str | None) -> str | None:
         return MATERIAL_FIBER_CEMENT
     if "vinyl" in text:
         return "vinyl"
+    if " ".join(text.split()) in _REPLACEMENT_LEAD_LABELS or any(k in text for k in _REPLACEMENT_LEAD_KEYWORDS):
+        return MATERIAL_REPLACEMENT_LEAD
     if any(keyword in text for keyword in _DURABLE_MATERIAL_KEYWORDS):
         return "durable_original"
     return "other"
@@ -696,6 +708,8 @@ def siding_age_score(
     percent_good_modifier_strength: float = DEFAULT_SIDING_PERCENT_GOOD_MODIFIER_STRENGTH,
     alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
     fiber_cement_score: float = DEFAULT_SIDING_FIBER_CEMENT_SCORE,
+    replacement_lead_decay_years: float = DEFAULT_SIDING_REPLACEMENT_LEAD_DECAY_YEARS,
+    replacement_lead_baseline_score: float = DEFAULT_SIDING_REPLACEMENT_LEAD_BASELINE_SCORE,
 ) -> float | None:
     """Score 0-1: how likely this property's exterior siding is original
     and overdue for replacement, from `exterior_wall_1` + `year_built`
@@ -749,6 +763,10 @@ def siding_age_score(
     elif material == "durable_original":
         base = _durable_material_age_score(
             year_built, durable_never_resided_year, durable_decay_years, durable_baseline_score
+        )
+    elif material == MATERIAL_REPLACEMENT_LEAD:
+        base = _durable_material_age_score(
+            year_built, DEFAULT_SIDING_REPLACEMENT_LEAD_NEVER_RESIDED_YEAR, replacement_lead_decay_years, replacement_lead_baseline_score
         )
     elif material == MATERIAL_FIBER_CEMENT:
         return fiber_cement_score  # flat: a recent install, whatever the year built (no percent-good nudge)
@@ -843,6 +861,7 @@ def real_siding_age_score(
     alum_vinyl_vinyl_weight: float = DEFAULT_SIDING_ALUM_VINYL_VINYL_WEIGHT,
     fiber_cement_score: float = DEFAULT_SIDING_FIBER_CEMENT_SCORE,
     fiber_cement_decay_years: float = DEFAULT_REAL_SIDING_FIBER_CEMENT_DECAY_YEARS,
+    replacement_lead_decay_years: float = DEFAULT_REAL_SIDING_REPLACEMENT_LEAD_DECAY_YEARS,
 ) -> float | None:
     """Score 0-1: real-mode siding material+age, using the direct
     `Siding:` field and real permit history together -- see module
@@ -911,6 +930,8 @@ def real_siding_age_score(
         decay_years = alum_vinyl_decay_years
     elif material == MATERIAL_FIBER_CEMENT:
         decay_years = fiber_cement_decay_years
+    elif material == MATERIAL_REPLACEMENT_LEAD:
+        decay_years = replacement_lead_decay_years
     else:
         decay_years = other_decay_years
 

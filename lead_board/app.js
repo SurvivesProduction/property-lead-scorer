@@ -110,6 +110,7 @@
     vinyl: 'Vinyl',
     durable_original: 'Durable (wood/brick/etc)',
     fiber_cement: 'Fiber cement',
+    replacement_lead: 'Composition board (replacement lead)',
     other: 'Other',
     asphalt: 'Asphalt',
     metal: 'Metal',
