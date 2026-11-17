@@ -205,8 +205,15 @@ def test_replacement_lead_scores_above_durable_and_rises_with_age():
 def test_replacement_lead_real_mode_decays_faster_than_durable():
     from datetime import date
     from extscorer.scoring.basic import real_siding_age_score
-    def parcel(wall):
+
+    def parcel(wall, permit=True):
+        # permit_class_split=False (the default) reads `most_recent_exterior_permit_date`, so the fixture sets that, not only the history
         return {"exterior_wall_1": wall, "year_built": 1975, "permit_data_available": True,
-                "permit_history": [{"permit_type": "Siding", "reason": "siding", "date_opened": "01/01/2006", "status": None}]}
+                "most_recent_exterior_permit_date": date(2006, 5, 1) if permit else None}
+
     comp, wood = real_siding_age_score(parcel("Comp./Wall Brd"), as_of_year=2026), real_siding_age_score(parcel("Wood"), as_of_year=2026)
-    assert comp > wood  # a 20-year-old re-side counts for less on a composition board's family curve
+    # 20 years since the re-side: 1 - exp(-20 / decay); decay 20 (replacement lead) vs 35 (durable)
+    assert comp == pytest.approx(1 - math.exp(-20 / 20)) and wood == pytest.approx(1 - math.exp(-20 / 35)) and comp > wood
+    # and the permit is what is being scored: with no permit the same parcels fall back to year_built 1975 (51 years), a different value
+    assert real_siding_age_score(parcel("Comp./Wall Brd", permit=False), as_of_year=2026) == pytest.approx(1 - math.exp(-51 / 20))
+    assert real_siding_age_score(parcel("Comp./Wall Brd", permit=False), as_of_year=2026) != pytest.approx(comp)
