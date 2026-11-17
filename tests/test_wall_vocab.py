@@ -148,3 +148,30 @@ def test_fiber_cement_has_its_own_board_filter_family(label) -> None:
 
 def test_composite_fiber_cement_label_keeps_the_durable_filter_family() -> None:
     assert wall_material_families("Clapboards/Cement Board") == [FAMILY_DURABLE]
+
+
+# --- vocabulary pass 3 (2026-11-16): Precast Panel is masonry, Enameled Steel is metal; composition board and the rest stay unmapped ---
+
+
+def test_precast_panel_is_masonry_so_roof_only_and_no_siding_score() -> None:
+    from extscorer.normalize.walls import is_masonry_text
+
+    assert is_masonry_text("Precast Panel") and is_masonry_text("Precast Concrete")
+    assert wall_material_families("Precast Panel") == [FAMILY_DURABLE]
+
+
+def test_enameled_steel_is_a_durable_metal_wall() -> None:
+    assert _classify_wall_material("Enameled Steel") == "durable_original"
+    assert wall_material_families("Enameled Steel") == [FAMILY_DURABLE]
+    assert wall_material_families("Pre-finsh Metl") == [FAMILY_DURABLE]
+
+
+@pytest.mark.parametrize("raw", ["Comp./Wall Brd", "Comp/ Wall Brd", "Single Siding", "Glass/Thermo.", "FLYASH ICON"])
+def test_values_held_back_from_the_vocabulary_stay_other(raw) -> None:
+    assert _classify_wall_material(raw) == "other"
+    assert wall_material_families(raw) == ["other"]
+
+
+@pytest.mark.parametrize("raw", ["Average", "Minimum", "Above Average", "Below Average"])
+def test_quality_grades_stay_unknown(raw) -> None:
+    assert usable_wall_text(raw) is None and wall_material_families(raw) == []

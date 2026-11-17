@@ -7,6 +7,7 @@ from extscorer.normalize.materials import (
     FAMILY_DURABLE,
     FAMILY_OTHER,
     FAMILY_VINYL,
+    ROOF_ASBESTOS,
     ROOF_ASPHALT,
     ROOF_CONCRETE,
     ROOF_METAL,
@@ -14,6 +15,7 @@ from extscorer.normalize.materials import (
     ROOF_RUBBER_ROLLED,
     ROOF_SLATE,
     ROOF_TAR_GRAVEL,
+    ROOF_TILE,
     ROOF_WOOD,
     classify_roof_material,
     wall_material_families,
@@ -98,8 +100,22 @@ def test_classify_roof_material_slate_and_concrete() -> None:
 
 
 def test_classify_roof_material_other_for_unmapped_real_values() -> None:
-    for raw in ["Vinyl - 50 yea", "Corrugated Asb", "Asbestos"]:
+    for raw in ["Vinyl - 50 yea", "Vinyl", "Fiber Panels", "Typical"]:
         assert classify_roof_material(raw) == ROOF_OTHER, raw
+
+
+def test_classify_roof_material_asbestos_family() -> None:
+    for raw in ["Asbestos Shing", "Asbestos", "Corrugated Asb", "Corrug Asb", "Corr. Asbestos"]:
+        assert classify_roof_material(raw) == ROOF_ASBESTOS, raw
+
+
+def test_classify_roof_material_tile_copper_fiberglass_membrane() -> None:
+    assert classify_roof_material("Clay Tile") == ROOF_TILE
+    assert classify_roof_material("Concrete Tile") == ROOF_CONCRETE  # still concrete, not tile
+    assert classify_roof_material("Copper") == ROOF_METAL
+    assert classify_roof_material("Fiberglass") == ROOF_ASPHALT
+    assert classify_roof_material("Membrane") == ROOF_RUBBER_ROLLED
+    assert classify_roof_material("Asphalt") == ROOF_ASPHALT  # asph is not caught by the asbestos keywords
 
 
 def test_classify_roof_material_none_for_missing_text() -> None:
