@@ -200,6 +200,27 @@ const DEFAULT_FILTER_STATE = {
   showStateOnly: false,
 };
 
+// __TEASER_STRIP_START__
+// A held parcel (a manual hold: already shown to a crew, data in doubt, ...) stays in the FULL export with
+// `flags.holds = [{kind, reason, held_at}]` and shows a badge. The teaser and share builds never carry a held row.
+const HOLD_KIND_LABELS = { shown_to_crew: 'shown to a crew', data_review: 'data review', other: 'other' };
+
+function escapeHtml(text) {
+  return String(text == null ? '' : text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function holdBadgeHtml(flags) {
+  const holds = (flags && flags.holds) || [];
+  return holds.map((h) => {
+    const kind = HOLD_KIND_LABELS[h.kind] || h.kind;
+    const date = String(h.held_at || '').slice(0, 10);
+    const text = `held: ${kind}${h.reason ? ` \u2014 ${h.reason}` : ''}${date ? ` (${date})` : ''}`;
+    return `<span class="badge badge-hold" title="${escapeHtml(text)}">${escapeHtml(text)}</span>`;
+  }).join(' ');
+}
+// __TEASER_STRIP_END__
+
 if (typeof module !== 'undefined') {
   module.exports = {
     isClaimedTerritory,
@@ -207,6 +228,7 @@ if (typeof module !== 'undefined') {
     isWorked,
     isMailedOrShown,
     isUnreachable,
+    holdBadgeHtml,
     // __TEASER_STRIP_END__
     isStateOnly,
     hasRealPermitHistory,

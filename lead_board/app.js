@@ -314,6 +314,11 @@
     const stateOnlyBadge = lead.flags.is_state_only
       ? '<span class="badge badge-state-only">state data only, not verified</span>'
       : '';
+    // Extra row badges that only the full board has (stripped from the teaser build): see filters.js.
+    let extraBadge = '';
+    // __TEASER_STRIP_START__
+    extraBadge = holdBadgeHtml(lead.flags);
+    // __TEASER_STRIP_END__
     const recordLink = lead.source_url
       ? `<a href="${lead.source_url}" target="_blank" rel="noopener" class="verify-link">View record card</a>`
       : '<span class="verify-link verify-link-none">No record link</span>';
@@ -369,6 +374,7 @@
           <span class="lead-town">${lead.town}</span>
           <span class="lead-built">built ${yearLabel}</span>
           ${stateOnlyBadge}
+          ${extraBadge}
           <button type="button" class="expand-btn" data-key="${lead.lead_key}">details</button>
         </div>
         <div class="lead-row-detail" id="detail-${cssSafe(lead.lead_key)}" hidden>

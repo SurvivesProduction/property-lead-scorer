@@ -114,6 +114,19 @@ def is_non_residential(parcel: dict[str, Any]) -> bool:
     return parcel.get("use_class") == "non_residential"
 
 
+def is_held(parcel: dict[str, Any]) -> bool:
+    """True if this parcel has an ACTIVE manual hold (migration 017, `parcel_holds`: a home kept out of outreach on purpose --
+    already shown to a crew, data in doubt, or another reason). A held parcel is still scored and still on the internal
+    dashboard and full export (with a badge); it is never selected for the digest, the Sheet, a mail drop, or the teaser/share boards.
+
+    Reads the plain `on_hold` key that `extscorer.db.client.parcels_for_client` annotates on every parcel it returns, so a caller
+    that loads parcels the normal way cannot forget it. Defaults to `False` when the key is absent (a hand-built dict, a test
+    fixture): an un-annotated parcel is not a held one. Releasing a hold sets `released_at`, the annotation drops, and the parcel is
+    eligible again on the next run.
+    """
+    return bool(parcel.get("on_hold"))
+
+
 def is_on_active_mail_drop(parcel: dict[str, Any]) -> bool:
     """True if this parcel is already queued for (or confirmed sent on) a
     physical mail drop -- 2026-10-29, mail-drop tracking. A lead already
@@ -180,6 +193,8 @@ def select_unsent_leads(
             continue
         if is_non_residential(parcel):
             continue
+        if is_held(parcel):
+            continue
         selected.append((lead, parcel))
         if len(selected) >= limit:
             break
@@ -231,6 +246,8 @@ def select_new_leads_for_pipeline(
         if is_unverified_state_only(parcel):
             continue
         if is_non_residential(parcel):
+            continue
+        if is_held(parcel):
             continue
         if is_on_active_mail_drop(parcel):
             continue
