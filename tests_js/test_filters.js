@@ -9,6 +9,7 @@ const {
   isMailedOrShown,
   isUnreachable,
   isStateOnly,
+  holdBadgeHtml,
   hasRealPermitHistory,
   materialsOf,
   roofCoverOf,
@@ -242,6 +243,28 @@ test('applyFilters: canopy range filter works off the component for a teaser-sha
   });
   const result = applyFilters([teaserRow], state, [], new Map());
   assert.deepStrictEqual(result.map((p) => p.lead_key), ['teaser-1']);
+});
+
+test('holdBadgeHtml: a row with no holds gets no badge', () => {
+  assert.strictEqual(holdBadgeHtml({}), '');
+  assert.strictEqual(holdBadgeHtml({ holds: [] }), '');
+  assert.strictEqual(holdBadgeHtml(undefined), '');
+});
+
+test('holdBadgeHtml: one badge per hold, with kind, reason and date', () => {
+  const html = holdBadgeHtml({ holds: [
+    { kind: 'shown_to_crew', reason: 'shown to a crew Oct 29', held_at: '2026-11-18T10:00:00+00:00' },
+    { kind: 'data_review', reason: 'year stale; Street View pending', held_at: '2026-11-18' },
+  ] });
+  assert.strictEqual((html.match(/badge-hold/g) || []).length, 2);
+  assert.ok(html.includes('held: shown to a crew \u2014 shown to a crew Oct 29 (2026-11-18)'));
+  assert.ok(html.includes('held: data review \u2014 year stale; Street View pending (2026-11-18)'));
+});
+
+test('holdBadgeHtml: reason text is escaped, never injected as markup', () => {
+  const html = holdBadgeHtml({ holds: [{ kind: 'other', reason: '<img src=x onerror=1> & "q"', held_at: '2026-11-18' }] });
+  assert.ok(!html.includes('<img'));
+  assert.ok(html.includes('&lt;img src=x onerror=1&gt; &amp; &quot;q&quot;'));
 });
 
 run();

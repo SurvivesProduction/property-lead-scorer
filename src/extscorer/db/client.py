@@ -268,10 +268,78 @@ def upsert_parcel(conn: psycopg.Connection, record: ParcelLeadRecord, commit: bo
 
 
 def parcels_for_client(conn: psycopg.Connection, client_id: str) -> list[dict[str, Any]]:
-    """Return every parcel record for `client_id`."""
+    """Return every parcel record for `client_id`, each annotated with its ACTIVE manual holds (migration 017): `on_hold`
+    (bool) and `holds` (a list of {kind, reason, held_by, held_at}, oldest first).
+
+    The annotation is made HERE, once, so no outreach path (digest, Sheet sync, mail-list builders, the board exports) can
+    forget to ask: `extscorer.digest.selection.is_held` just reads `on_hold`. A held parcel is still returned (scoring and
+    the internal views show everything); it is the selection paths that leave it out. Needs migration 017: without the
+    table this raises rather than quietly treating every parcel as un-held.
+    """
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("select * from parcels where client_id = %(client_id)s", {"client_id": client_id})
-        return cur.fetchall()
+        parcels = cur.fetchall()
+    return annotate_holds(parcels, active_holds_for_client(conn, client_id))
+
+
+HOLD_KINDS = ("shown_to_crew", "data_review", "other")
+
+
+def active_holds_for_client(conn: psycopg.Connection, client_id: str) -> dict[Any, list[dict[str, Any]]]:
+    """`{parcels.id: [active holds]}` for `client_id`: rows of `parcel_holds` with `released_at IS NULL`, oldest first."""
+    out: dict[Any, list[dict[str, Any]]] = {}
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            "select id, parcel_uuid, kind, reason, held_by, held_at from parcel_holds "
+            "where client_id = %(client_id)s and released_at is null order by held_at, id",
+            {"client_id": client_id},
+        )
+        for row in cur.fetchall():
+            out.setdefault(row["parcel_uuid"], []).append(
+                {"hold_id": row["id"], "kind": row["kind"], "reason": row["reason"], "held_by": row["held_by"], "held_at": row["held_at"]}
+            )
+    return out
+
+
+def annotate_holds(parcels: list[dict[str, Any]], holds_by_parcel: dict[Any, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Set `on_hold` and `holds` on every parcel dict (in place) from `{parcels.id: [holds]}`. Pure."""
+    for parcel in parcels:
+        holds = holds_by_parcel.get(parcel["id"], [])
+        parcel["on_hold"] = bool(holds)
+        parcel["holds"] = list(holds)
+    return parcels
+
+
+def add_parcel_hold(conn: psycopg.Connection, client_id: str, parcel_uuid: Any, kind: str, reason: str, held_by: str) -> int:
+    """Insert one ACTIVE hold and return its id. Does not commit. `kind` must be one of `HOLD_KINDS`, `reason` and `held_by` non-blank
+    (the table's own checks say the same; this fails earlier, with a readable message)."""
+    if kind not in HOLD_KINDS:
+        raise ValueError(f"hold kind must be one of {HOLD_KINDS}, got {kind!r}")
+    if not (reason or "").strip() or not (held_by or "").strip():
+        raise ValueError("a hold needs a reason and a held_by")
+    with conn.cursor() as cur:
+        cur.execute(
+            "insert into parcel_holds (client_id, parcel_uuid, kind, reason, held_by) "
+            "values (%(client_id)s, %(parcel_uuid)s, %(kind)s, %(reason)s, %(held_by)s) returning id",
+            {"client_id": client_id, "parcel_uuid": parcel_uuid, "kind": kind, "reason": reason.strip(), "held_by": held_by.strip()},
+        )
+        return cur.fetchone()[0]
+
+
+def release_parcel_holds(conn: psycopg.Connection, client_id: str, hold_ids: list[int], released_by: str) -> int:
+    """Release the given ACTIVE holds (sets `released_at`; the row is kept). Returns how many were released; an id that is already
+    released, or belongs to another client, is skipped. Does not commit."""
+    if not (released_by or "").strip():
+        raise ValueError("a release needs a released_by")
+    if not hold_ids:
+        return 0
+    with conn.cursor() as cur:
+        cur.execute(
+            "update parcel_holds set released_at = now(), released_by = %(by)s "
+            "where client_id = %(client_id)s and id = any(%(ids)s) and released_at is null",
+            {"by": released_by.strip(), "client_id": client_id, "ids": list(hold_ids)},
+        )
+        return cur.rowcount
 
 
 def update_parcel_year_built_sources(conn: psycopg.Connection, assignments: list[tuple[Any, str]]) -> int:
