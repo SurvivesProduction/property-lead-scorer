@@ -165,3 +165,22 @@ def test_release_sets_released_at_and_skips_the_already_released() -> None:
     assert client.release_parcel_holds(conn, "c", [], "noah") == 0
     with pytest.raises(ValueError):
         client.release_parcel_holds(conn, "c", [3], " ")
+
+
+# --- end to end: a hold in the TABLE reaches the selectors through parcels_for_client -----------------------------
+
+def _loaded(holds: list[dict]) -> list[tuple[_Lead, dict]]:
+    """Three parcels loaded the real way (`parcels_for_client` over a fake connection) and paired with a lead each, in rank order."""
+    conn = _Conn([{"id": f"u{i}", "town": "Killingly", "parcel_id": i} for i in "ABC"], holds)
+    return [(_Lead(p["parcel_id"]), p) for p in client.parcels_for_client(conn, "c")]
+
+
+@pytest.mark.parametrize("select", ["unsent", "pipeline"])
+def test_a_hold_row_reaches_the_selectors_and_releasing_it_brings_the_parcel_back(select: str) -> None:
+    def run(pairs):
+        if select == "unsent":
+            return select_unsent_leads(pairs, already_sent_parcel_row_ids=set(), limit=10)
+        return select_new_leads_for_pipeline(pairs, existing_pipeline_lead_keys=set(), limit=10)
+
+    assert [p["parcel_id"] for _, p in run(_loaded([_hold("uB")]))] == ["A", "C"]  # an active hold row on B
+    assert [p["parcel_id"] for _, p in run(_loaded([]))] == ["A", "B", "C"]  # released: the query returns no row for it
