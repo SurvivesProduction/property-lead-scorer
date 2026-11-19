@@ -314,7 +314,7 @@
     const stateOnlyBadge = lead.flags.is_state_only
       ? '<span class="badge badge-state-only">state data only, not verified</span>'
       : '';
-    // Extra row badges that only the full board has (stripped from the teaser build): see filters.js.
+    // Optional row badges (empty in this build): see filters.js.
     let extraBadge = '';
     // __TEASER_STRIP_START__
     extraBadge = holdBadgeHtml(lead.flags);
