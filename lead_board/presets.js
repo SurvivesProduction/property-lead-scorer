@@ -21,7 +21,9 @@ const PRESETS = {
       storm: 0.05,
       siding: 0.3,
       jobSize: 0,
+      // __TEASER_STRIP_START__
       saleRecency: 0,
+      // __TEASER_STRIP_END__
     },
   },
   // **Siding-focused: property_weight dropped to 0, 2026-10-30
@@ -62,7 +64,9 @@ const PRESETS = {
       storm: 0.05,
       siding: 0.7,
       jobSize: 0.1,
+      // __TEASER_STRIP_START__
       saleRecency: 0,
+      // __TEASER_STRIP_END__
     },
   },
   bigger_jobs: {
@@ -74,7 +78,9 @@ const PRESETS = {
       storm: 0.05,
       siding: 0.2,
       jobSize: 0.35,
+      // __TEASER_STRIP_START__
       saleRecency: 0,
+      // __TEASER_STRIP_END__
     },
   },
 };

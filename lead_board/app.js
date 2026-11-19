@@ -35,9 +35,11 @@
   // ---- percentile tables, computed ONCE over the full population ----
   const sortedSqft = PARCELS.map((p) => p.living_area_sqft).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
   const sortedAssessedValue = PARCELS.map((p) => p.assessed_value).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
+  // __TEASER_STRIP_START__
   const sortedSaleYears = PARCELS.map((p) => p.last_sale_year).filter((v) => v !== null && v !== undefined).sort((a, b) => a - b);
+  // __TEASER_STRIP_END__
 
-  // A teaser row carries jobSize/saleRecency PRECOMPUTED server-side
+  // A teaser row carries jobSize PRECOMPUTED server-side
   // (scripts/build_lead_board.py's `build_teaser_data`, percentile rank
   // against the share population) instead of the raw living_area_sqft/
   // assessed_value/last_sale_year this function would otherwise need --
@@ -46,22 +48,31 @@
   // whenever a row already has one; only fall back to computing it from
   // raw fields (every other build) when it doesn't.
   const jobSizeByLeadKey = new Map();
+  // __TEASER_STRIP_START__
+  // The teaser build strips every sale-recency line below: its rows carry no sale-recency value at all (it would be a quasi-identifier
+  // outside the re-identification gate key), so the map stays empty there, `computeScore`/`scoreBreakdown` skip the undefined component,
+  // and a hand-edited URL hash with a sale-recency weight cannot rank or break anything down by it.
+  // __TEASER_STRIP_END__
   const saleRecencyByLeadKey = new Map();
   for (const p of PARCELS) {
     const precomputedJobSize = p.components && p.components.jobSize;
+    // __TEASER_STRIP_START__
     const precomputedSaleRecency = p.components && p.components.saleRecency;
+    // __TEASER_STRIP_END__
     jobSizeByLeadKey.set(
       p.lead_key,
       precomputedJobSize !== null && precomputedJobSize !== undefined
         ? precomputedJobSize
         : computeJobSizeComponent(p, sortedSqft, sortedAssessedValue)
     );
+    // __TEASER_STRIP_START__
     saleRecencyByLeadKey.set(
       p.lead_key,
       precomputedSaleRecency !== null && precomputedSaleRecency !== undefined
         ? precomputedSaleRecency
         : computeSaleRecencyComponent(p, sortedSaleYears)
     );
+    // __TEASER_STRIP_END__
   }
 
   const DEFAULT_WEIGHTS = PRESETS.darren_default.weights;
@@ -180,12 +191,15 @@
       slider('w-siding', 'Siding', 'siding', 0, 1, 0.01, false),
       slider('w-storm', 'Storm history', 'storm', 0, 1, 0.01, true, 'County-wide constant, no differentiation yet.'),
       slider('w-jobsize', 'Job size', 'jobSize', 0, 1, 0.01, false),
+      // __TEASER_STRIP_START__
       slider('w-salerecency', 'Sale recency', 'saleRecency', 0, 1, 0.01, false),
+      // __TEASER_STRIP_END__
     ].join('');
 
     ['property', 'canopy', 'siding', 'jobsize', 'salerecency'].forEach((idKey, i) => {
       const key = ['property', 'canopy', 'siding', 'jobSize', 'saleRecency'][i];
       const input = el(`w-${idKey}`);
+      if (!input) return;
       input.addEventListener('input', () => {
         state.weights[key] = parseFloat(input.value);
         state.activePreset = null;
@@ -337,7 +351,9 @@
       siding: 'Siding',
       storm: 'Storm history',
       jobSize: 'Job size',
+      // __TEASER_STRIP_START__
       saleRecency: 'Sale recency',
+      // __TEASER_STRIP_END__
       // __TEASER_STRIP_START__
       spend: 'Likely to spend',
       // __TEASER_STRIP_END__
