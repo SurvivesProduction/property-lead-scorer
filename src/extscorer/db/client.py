@@ -282,7 +282,9 @@ def parcels_for_client(conn: psycopg.Connection, client_id: str) -> list[dict[st
     return annotate_holds(parcels, active_holds_for_client(conn, client_id))
 
 
-HOLD_KINDS = ("shown_to_crew", "data_review", "other")
+HOLD_KINDS = ("shown_to_crew", "data_review", "other", "do_not_contact")
+# Kinds a review sweep must never clear: `release_parcel_holds` skips them unless `include_permanent=True` (migration 018).
+PERMANENT_HOLD_KINDS = ("do_not_contact",)
 
 
 def active_holds_for_client(conn: psycopg.Connection, client_id: str) -> dict[Any, list[dict[str, Any]]]:
@@ -326,9 +328,10 @@ def add_parcel_hold(conn: psycopg.Connection, client_id: str, parcel_uuid: Any, 
         return cur.fetchone()[0]
 
 
-def release_parcel_holds(conn: psycopg.Connection, client_id: str, hold_ids: list[int], released_by: str) -> int:
+def release_parcel_holds(conn: psycopg.Connection, client_id: str, hold_ids: list[int], released_by: str, include_permanent: bool = False) -> int:
     """Release the given ACTIVE holds (sets `released_at`; the row is kept). Returns how many were released; an id that is already
-    released, or belongs to another client, is skipped. Does not commit."""
+    released, or belongs to another client, is skipped. A PERMANENT kind (`PERMANENT_HOLD_KINDS`) is skipped too, even when its id is
+    named, unless `include_permanent` is True. Does not commit."""
     if not (released_by or "").strip():
         raise ValueError("a release needs a released_by")
     if not hold_ids:
@@ -336,8 +339,10 @@ def release_parcel_holds(conn: psycopg.Connection, client_id: str, hold_ids: lis
     with conn.cursor() as cur:
         cur.execute(
             "update parcel_holds set released_at = now(), released_by = %(by)s "
-            "where client_id = %(client_id)s and id = any(%(ids)s) and released_at is null",
-            {"by": released_by.strip(), "client_id": client_id, "ids": list(hold_ids)},
+            "where client_id = %(client_id)s and id = any(%(ids)s) and released_at is null "
+            "and (%(include_permanent)s or kind <> all(%(permanent)s))",
+            {"by": released_by.strip(), "client_id": client_id, "ids": list(hold_ids), "include_permanent": include_permanent,
+             "permanent": list(PERMANENT_HOLD_KINDS)},
         )
         return cur.rowcount
 

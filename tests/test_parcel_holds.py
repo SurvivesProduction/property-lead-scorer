@@ -27,7 +27,7 @@ def test_table_has_the_columns_and_rls_on_with_no_policy() -> None:
 def test_kind_is_limited_and_reason_cannot_be_blank() -> None:
     assert "check (kind in ('shown_to_crew', 'data_review', 'other'))" in BODY
     assert "check (length(btrim(reason)) > 0)" in BODY
-    assert tuple(client.HOLD_KINDS) == ("shown_to_crew", "data_review", "other")
+    assert tuple(client.HOLD_KINDS) == ("shown_to_crew", "data_review", "other", "do_not_contact")  # 'do_not_contact' arrives with migration 018
 
 
 def test_a_release_names_who_released_it_and_cannot_predate_the_hold() -> None:
@@ -44,6 +44,36 @@ def test_replaying_is_safe_and_parcels_is_untouched() -> None:
     assert "create table if not exists parcel_holds" in BODY
     for word in ("alter table parcels", "update parcels", "delete from parcels", "drop table", "drop column"):
         assert word not in BODY
+
+
+# --- migration 018: the permanent kind --------------------------------------------------------------------------
+
+SQL18 = (Path(__file__).resolve().parent.parent / "src" / "extscorer" / "migrations" / "018_parcel_holds_do_not_contact.sql").read_text()
+BODY18 = " ".join(" ".join(ln for ln in SQL18.splitlines() if not ln.strip().startswith("--")).lower().split())
+
+
+def test_018_widens_only_the_kind_check_and_can_be_replayed() -> None:
+    assert "drop constraint if exists parcel_holds_kind_check" in BODY18
+    assert "check (kind in ('shown_to_crew', 'data_review', 'other', 'do_not_contact'))" in BODY18
+    for word in ("drop table", "drop column", "delete from", "update ", "alter table parcels"):
+        assert word not in BODY18
+    kinds = BODY18.split("check (kind in (")[1].split("))")[0].replace("'", "").replace(" ", "").split(",")
+    assert tuple(kinds) == tuple(client.HOLD_KINDS)  # the constraint and the code list say the same thing
+
+
+def test_do_not_contact_is_permanent_and_temporary_kinds_are_not() -> None:
+    assert client.PERMANENT_HOLD_KINDS == ("do_not_contact",)
+    assert set(client.PERMANENT_HOLD_KINDS) <= set(client.HOLD_KINDS)
+    assert not {"data_review", "shown_to_crew", "other"} & set(client.PERMANENT_HOLD_KINDS)
+
+
+def test_a_release_skips_permanent_kinds_unless_told_to_include_them() -> None:
+    conn = _Conn([], [])
+    client.release_parcel_holds(conn, "c", [3, 4], "noah")
+    sql, params = conn.calls[-1]
+    assert "kind <> all(%(permanent)s)" in sql and params["include_permanent"] is False and params["permanent"] == ["do_not_contact"]
+    client.release_parcel_holds(conn, "c", [3], "noah", include_permanent=True)
+    assert conn.calls[-1][1]["include_permanent"] is True
 
 
 # --- the predicate and the two selectors -------------------------------------------------------------------------
