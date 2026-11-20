@@ -203,7 +203,7 @@ const DEFAULT_FILTER_STATE = {
 // __TEASER_STRIP_START__
 // A held parcel (a manual hold: already shown to a crew, data in doubt, ...) stays in the FULL export with
 // `flags.holds = [{kind, reason, held_at}]` and shows a badge. The teaser and share builds never carry a held row.
-const HOLD_KIND_LABELS = { shown_to_crew: 'shown to a crew', data_review: 'data review', other: 'other' };
+const HOLD_KIND_LABELS = { shown_to_crew: 'shown to a crew', data_review: 'data review', other: 'other', do_not_contact: 'do not contact' };
 
 function escapeHtml(text) {
   return String(text == null ? '' : text)
